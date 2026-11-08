@@ -5,7 +5,11 @@
  */
 import { createClient } from "@neon/neon-js";
 
-const AUTH_URL = import.meta.env.VITE_NEON_AUTH_URL;
+// Neon Auth is reached through our own site (/api/auth, forwarded to Neon by
+// render.yaml in production and by vite.config.js in development). That makes
+// the sign-in cookie first-party, which Safari requires: it blocks cookies set
+// by other sites (Neon's auth domain) in the background.
+const AUTH_URL = typeof location !== "undefined" ? `${location.origin}/api/auth` : null;
 const DATA_API_URL = import.meta.env.VITE_NEON_DATA_API_URL;
 
 let clientPromise;
@@ -18,8 +22,8 @@ export function getClient() {
         const { createTestClient } = await import("./test-client.js");
         return createTestClient(DATA_API_URL);
       }
-      if (!AUTH_URL || !DATA_API_URL) {
-        throw new Error("Missing VITE_NEON_AUTH_URL / VITE_NEON_DATA_API_URL. See README.");
+      if (!DATA_API_URL) {
+        throw new Error("Missing VITE_NEON_DATA_API_URL. See README.");
       }
       return createClient({ auth: { url: AUTH_URL }, dataApi: { url: DATA_API_URL } });
     })();

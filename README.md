@@ -19,6 +19,11 @@ Neon Postgres: Row Level Security decides what each user may see or change
 There is no server of our own. The rules that used to live in Python now live
 in the database (`db/setup.sql`), so they can't be bypassed from the browser.
 
+**Safari:** Neon Auth is reached through this site's own `/api/auth/*` path
+(forwarded to Neon by `render.yaml`, and by `vite.config.js` during development).
+That keeps the sign-in cookie first-party; Safari blocks it when the app calls
+Neon's auth domain directly.
+
 | File | What it does |
 |---|---|
 | `src/kinship.js` | Finds how two people are related (`F.eB` = father's elder brother) and looks up the term |
@@ -59,7 +64,8 @@ Clients → your Web client → *Authorised redirect URIs*: add
 `<your Neon Auth URL>/callback/google`.
 
 ### 3. Render
-New → Blueprint → this repo. Set `VITE_NEON_AUTH_URL` and `VITE_NEON_DATA_API_URL`.
+New → Blueprint → this repo. Set `VITE_NEON_DATA_API_URL`.
+If your Neon Auth URL changes, update the `/api/auth/*` destination in `render.yaml`.
 
 ### Run locally
 ```bash
