@@ -20,6 +20,15 @@ Each person can also have a **phone** (tap to call), **address** (opens Google M
 and a **photo** (resized to 400px in the browser, stored in Postgres because
 Render's disk is wiped on every deploy).
 
+### Linking family trees
+Each family keeps its own tree. When one person belongs to two families
+(e.g. Priya is in her husband's tree and her parents' tree), link the two cards
+as **the same person**: select her → *Same person in another tree…*.
+
+Tick **Include linked families** to see both trees together. Linked cards merge
+into one, so terms work across families: Priya's son → her brother = **Maama**.
+Code: `family_view.py` merges linked cards before the kinship engine runs.
+
 Add a language = add rows to `terms_seed.py` (no code changes).
 Tamil terms vary by region and family — review and adjust.
 
@@ -30,8 +39,9 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 flask --app app init-db       # tables + kinship terms (uses SQLite locally)
 flask --app app seed-demo     # sample 3-generation family
+flask --app app seed-linked-demo  # second family, linked through Priya
 flask --app app run           # http://127.0.0.1:5000
-pytest -q                     # 22 tests
+pytest -q                     # 31 tests
 ```
 
 ## Deploy: Neon + Render
@@ -46,7 +56,7 @@ pytest -q                     # 22 tests
    Without it, anyone with the link can see phone numbers and addresses.
 5. The build runs `init-db`, which also adds new columns to existing tables.
 6. Demo data (Render's free plan has no Shell, so run it on your machine):
-   `export DATABASE_URL='<neon string>' && flask --app app seed-demo`
+   `export DATABASE_URL='<neon string>' && flask --app app seed-demo && flask --app app seed-linked-demo`
 
 ## API
 
@@ -59,8 +69,12 @@ pytest -q                     # 22 tests
 | PUT / DELETE | `/api/people/<id>` | edit (incl. `phone`, `address`, `photo` data URL, `remove_photo`) / remove |
 | GET | `/api/people/<id>/photo` | the stored photo |
 | POST | `/api/relationships` | raw link: `type` parent or spouse |
+| GET | `/api/trees/<id>?linked=1` | tree plus every linked family, linked cards merged |
+| POST | `/api/trees` | new tree: `name` |
+| POST / DELETE | `/api/links`, `/api/links/<id>` | link two cards as the same person (`person_a`, `person_b`) / unlink |
 
 ## Next ideas
-- Login + private trees, share link
+- Share link + link requests with approval (needs logins)
+- Suggest duplicates: same name + birth year in two trees
 - Hindi, Telugu, Malayalam terms
 - Drag to pan on mobile

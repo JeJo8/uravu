@@ -4,11 +4,13 @@ import os
 from datetime import date, datetime, timezone
 
 import click
+from sqlalchemy import func
 from flask import Flask, jsonify, request, render_template, abort, Response
 
 import kinship
+from family_view import load_view, kin_inputs, same_person_ids
 from models import (Base, engine, SessionLocal, Tree, Person, Relationship,
-                    KinshipTerm, add_missing_columns)
+                    KinshipTerm, PersonLink, add_missing_columns)
 from terms_seed import ALL_TERMS, LANGUAGES
 
 app = Flask(__name__)
@@ -95,18 +97,8 @@ def _set_photo(p, data_url):
     return None
 
 
-def load_tree(db, tree_id):
-    persons = db.query(Person).filter_by(tree_id=tree_id).all()
-    ids = {p.id for p in persons}
-    rels = [r for r in db.query(Relationship).all()
-            if r.person_id in ids and r.related_id in ids]
-    return persons, rels
-
-
-def kin_inputs(persons, rels):
-    people = {p.id: {"gender": p.gender, "birth_date": p.birth_date} for p in persons}
-    links = [(r.person_id, r.related_id, r.type) for r in rels]
-    return people, links
+def _linked_flag():
+    return request.args.get("linked") in ("1", "true", "yes")
 
 
 def all_terms(db):
@@ -135,20 +127,20 @@ def languages():
 @app.get("/api/trees")
 def trees():
     with SessionLocal() as db:
-        return jsonify([{"id": t.id, "name": t.name} for t in db.query(Tree).all()])
+        counts = dict(db.query(Person.tree_id, func.count(Person.id)).group_by(Person.tree_id).all())
+        return jsonify([{"id": t.id, "name": t.name, "people": counts.get(t.id, 0)}
+                        for t in db.query(Tree).order_by(Tree.id).all()])
 
 
 @app.get("/api/trees/<int:tree_id>")
 def tree(tree_id):
+    """?linked=1 also shows every family joined through "same person" links."""
     with SessionLocal() as db:
         t = db.get(Tree, tree_id) or abort(404)
-        persons, rels = load_tree(db, tree_id)
-        return jsonify({
-            "id": t.id, "name": t.name,
-            "people": [p.to_dict() for p in persons],
-            "relationships": [{"person_id": r.person_id, "related_id": r.related_id,
-                               "type": r.type} for r in rels],
-        })
+        view = load_view(db, tree_id, _linked_flag())
+        return jsonify({"id": t.id, "name": t.name, "linked": _linked_flag(),
+                        "tree_ids": view["tree_ids"], "people": view["people"],
+                        "relationships": view["relationships"]})
 
 
 @app.get("/api/trees/<int:tree_id>/kinship/<int:person_id>")
@@ -156,26 +148,61 @@ def kinship_view(tree_id, person_id):
     """What the selected person calls everyone, and what everyone calls them."""
     lang = request.args.get("lang", "ta")
     with SessionLocal() as db:
-        persons, rels = load_tree(db, tree_id)
-        people, links = kin_inputs(persons, rels)
-        if person_id not in people:
+        view = load_view(db, tree_id, _linked_flag())
+        people, links = kin_inputs(view)
+        ego = view["alias"].get(person_id)
+        if ego is None:
             abort(404)
-        result = kinship.calls_everyone(people, links, all_terms(db), person_id, lang)
+        result = kinship.calls_everyone(people, links, all_terms(db), ego, lang)
         return jsonify({str(k): v for k, v in result.items()})
 
 
 @app.get("/api/kinship")
 def kinship_pair():
-    """/api/kinship?a=1&b=5&lang=ta"""
+    """/api/kinship?a=1&b=5&lang=ta — works across linked trees."""
     a, b = int(request.args["a"]), int(request.args["b"])
     lang = request.args.get("lang", "ta")
     with SessionLocal() as db:
         pa = db.get(Person, a) or abort(404)
-        persons, rels = load_tree(db, pa.tree_id)
-        people, links = kin_inputs(persons, rels)
-        if b not in people:
+        view = load_view(db, pa.tree_id, include_linked=True)
+        people, links = kin_inputs(view)
+        if b not in view["alias"]:
             abort(404)
-        return jsonify(kinship.relate(people, links, all_terms(db), a, b, lang))
+        return jsonify(kinship.relate(people, links, all_terms(db),
+                                      view["alias"][a], view["alias"][b], lang))
+
+
+# ---------------------------------------------------------------- API: links
+
+@app.post("/api/links")
+def add_link():
+    """Mark two cards in different trees as the same person."""
+    d = request.json
+    with SessionLocal() as db:
+        a, b = db.get(Person, d.get("person_a")), db.get(Person, d.get("person_b"))
+        if not a or not b:
+            return {"error": "Both people must exist"}, 400
+        if a.tree_id == b.tree_id:
+            return {"error": "Pick someone from a different tree"}, 400
+        if a.gender != b.gender:
+            return {"error": f"{a.full_name} and {b.full_name} have different genders"}, 400
+        if b.id in same_person_ids(db, a.id):
+            return {"error": "Already linked"}, 400
+        if any(db.get(Person, x).tree_id == b.tree_id for x in same_person_ids(db, a.id)):
+            return {"error": f"{a.full_name} is already linked to someone in that tree"}, 400
+        link = PersonLink(person_a=a.id, person_b=b.id, status="approved")
+        db.add(link)
+        db.commit()
+        return {"id": link.id, "person_a": a.id, "person_b": b.id}, 201
+
+
+@app.delete("/api/links/<int:link_id>")
+def remove_link(link_id):
+    with SessionLocal() as db:
+        link = db.get(PersonLink, link_id) or abort(404)
+        db.delete(link)
+        db.commit()
+        return "", 204
 
 
 # ---------------------------------------------------------------- API: write
@@ -183,7 +210,10 @@ def kinship_pair():
 @app.post("/api/trees")
 def create_tree():
     with SessionLocal() as db:
-        t = Tree(name=request.json.get("name", "My Family"))
+        name = _clean(request.json.get("name"), 120)
+        if not name:
+            return {"error": "Give the tree a name"}, 400
+        t = Tree(name=name)
         db.add(t)
         db.commit()
         return jsonify({"id": t.id, "name": t.name}), 201
@@ -222,11 +252,17 @@ def _link(db, new, rid, rel):
     elif rel in ("husband", "wife"):
         db.add(Relationship(person_id=rid, related_id=new.id, type="spouse"))
     elif rel in ("brother", "sister"):
-        parents = db.query(Relationship).filter_by(related_id=rid, type="parent").all()
+        # parents may live in a linked tree (e.g. a wife's parents in her family's tree)
+        copies = same_person_ids(db, rid)
+        parents = db.query(Relationship).filter(
+            Relationship.related_id.in_(copies), Relationship.type == "parent").all()
         if not parents:
             return "Add a parent first, so siblings can be linked through them."
-        for pr in parents:
-            db.add(Relationship(person_id=pr.person_id, related_id=new.id, type="parent"))
+        parent_ids = {pr.person_id for pr in parents}
+        # the new sibling belongs in the parents' tree
+        new.tree_id = db.get(Person, min(parent_ids)).tree_id
+        for pid in parent_ids:
+            db.add(Relationship(person_id=pid, related_id=new.id, type="parent"))
     else:
         return f"Unknown relation '{rel}'"
     return None
@@ -261,6 +297,8 @@ def delete_person(pid):
         p = db.get(Person, pid) or abort(404)
         db.query(Relationship).filter(
             (Relationship.person_id == pid) | (Relationship.related_id == pid)).delete()
+        db.query(PersonLink).filter(
+            (PersonLink.person_a == pid) | (PersonLink.person_b == pid)).delete()
         db.delete(p)
         db.commit()
         return "", 204
@@ -337,6 +375,35 @@ def seed_demo():
         parent("senthil", "nila")
         db.commit()
         click.echo(f"Demo tree created with id {t.id}")
+
+
+@app.cli.command("seed-linked-demo")
+def seed_linked_demo():
+    """Add a second family (Priya's side) and link it to the Demo Family."""
+    with SessionLocal() as db:
+        demo = db.query(Tree).filter_by(name="Demo Family").first()
+        priya = demo and db.query(Person).filter_by(tree_id=demo.id, full_name="Priya").first()
+        if not priya:
+            raise click.ClickException("Run seed-demo first")
+        t = Tree(name="Kumar Family")
+        db.add(t)
+        db.flush()
+        p = {}
+        for key, name, g, y in [("kumar", "Kumar", "M", 1945), ("valli", "Valli", "F", 1950),
+                                ("balu", "Balu", "M", 1971), ("priya", "Priya", "F", 1974),
+                                ("geetha", "Geetha", "F", 1975), ("hari", "Hari", "M", 2001)]:
+            p[key] = Person(tree_id=t.id, full_name=name, gender=g, birth_date=date(y, 1, 1))
+            db.add(p[key])
+        db.flush()
+        R = lambda a, b, k: db.add(Relationship(person_id=p[a].id, related_id=p[b].id, type=k))
+        R("kumar", "valli", "spouse"); R("balu", "geetha", "spouse")
+        for par in ("kumar", "valli"):
+            R(par, "balu", "parent"); R(par, "priya", "parent")
+        for par in ("balu", "geetha"):
+            R(par, "hari", "parent")
+        db.add(PersonLink(person_a=priya.id, person_b=p["priya"].id, status="approved"))
+        db.commit()
+        click.echo(f"Kumar Family created (id {t.id}) and linked through Priya")
 
 
 if __name__ == "__main__":

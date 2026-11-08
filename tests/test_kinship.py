@@ -130,3 +130,86 @@ def test_migration_adds_columns_to_old_table(tmp_path):
     finally:
         models.engine = real
     assert {"phone", "address", "photo", "photo_mime", "photo_updated"} <= cols
+
+
+# ---------------------------------------------------------------- linked trees
+from app import seed_linked_demo  # noqa: E402
+
+
+def pid_in(name, tree):
+    with SessionLocal() as db:
+        from models import Tree
+        t = db.query(Tree).filter_by(name=tree).one()
+        return db.query(Person).filter_by(full_name=name, tree_id=t.id).one().id
+
+
+@pytest.fixture(scope="module")
+def linked(client):
+    out = app.test_cli_runner().invoke(seed_linked_demo).output
+    assert "linked through Priya" in out
+    return client
+
+
+@pytest.mark.parametrize("a,b,a_calls,b_calls", [
+    ("Karthik", "Balu", "Maama", "Marumagan"),      # mother's elder brother, other tree
+    ("Karthik", "Kumar", "Thatha", "Peran"),        # mother's father
+    ("Karthik", "Hari", "Machan", "Machan"),        # mother's brother's son
+    ("Selvam", "Balu", "Machan", None),             # wife's brother
+    ("Selvam", "Kumar", "Maamanar", None),          # wife's father
+])
+def test_terms_cross_linked_trees(linked, a, b, a_calls, b_calls):
+    a_id = pid_in(a, "Demo Family")
+    b_id = pid_in(b, "Kumar Family")
+    r = linked.get(f"/api/kinship?a={a_id}&b={b_id}&lang=ta").json
+    assert r["a_calls_b"]["term"] == a_calls
+    if b_calls:
+        assert r["b_calls_a"]["term"] == b_calls
+
+
+def test_linked_view_merges_same_person(linked):
+    demo = linked.get("/api/trees/1").json
+    assert all(p["full_name"] != "Balu" for p in demo["people"])      # own tree only
+    priya = next(p for p in demo["people"] if p["full_name"] == "Priya")
+    assert priya["linked_to"][0]["tree_name"] == "Kumar Family"        # badge shows
+
+    both = linked.get("/api/trees/1?linked=1").json
+    names = [p["full_name"] for p in both["people"]]
+    assert names.count("Priya") == 1 and "Balu" in names               # merged, not duplicated
+    balu = next(p for p in both["people"] if p["full_name"] == "Balu")
+    assert balu["from_other_tree"] is True
+    view = linked.get(f"/api/trees/1/kinship/{pid_in('Karthik', 'Demo Family')}?lang=ta&linked=1").json
+    assert view[str(balu["id"])]["a_calls_b"]["term"] == "Maama"
+
+
+def test_link_rules(linked):
+    arun, karthik = pid_in("Arun", "Demo Family"), pid_in("Karthik", "Demo Family")
+    hari = pid_in("Hari", "Kumar Family")
+    assert linked.post("/api/links", json={"person_a": arun, "person_b": karthik}).status_code == 400  # same tree
+    assert linked.post("/api/links", json={"person_a": arun, "person_b": pid_in("Valli", "Kumar Family")}).status_code == 400  # gender
+    priya1, priya2 = pid_in("Priya", "Demo Family"), pid_in("Priya", "Kumar Family")
+    assert linked.post("/api/links", json={"person_a": priya1, "person_b": priya2}).json["error"] == "Already linked"
+    r = linked.post("/api/links", json={"person_a": arun, "person_b": hari})
+    assert r.status_code == 201
+    assert linked.delete(f"/api/links/{r.json['id']}").status_code == 204
+
+
+def test_add_sibling_through_linked_parents(linked):
+    """Adding a sister to Priya (viewed in Demo Family) puts her in the Kumar tree."""
+    r = linked.post("/api/people", json={"tree_id": 1, "full_name": "Revathi", "gender": "F",
+                                         "birth_date": "1978-01-01",
+                                         "relative_id": pid_in("Priya", "Demo Family"),
+                                         "relation": "sister"})
+    assert r.status_code == 201
+    assert r.json["tree_id"] != 1
+    k = linked.get(f"/api/kinship?a={pid_in('Karthik', 'Demo Family')}&b={r.json['id']}").json
+    assert k["a_calls_b"]["term"] == "Chithi"                          # mother's younger sister
+
+
+def test_new_tree_and_delete_cleans_links(linked):
+    t = linked.post("/api/trees", json={"name": "Test Tree"}).json
+    assert linked.post("/api/trees", json={"name": " "}).status_code == 400
+    x = linked.post("/api/people", json={"tree_id": t["id"], "full_name": "Zed", "gender": "M"}).json
+    linked.post("/api/links", json={"person_a": x["id"], "person_b": pid_in("Vijay", "Demo Family")})
+    assert linked.delete(f"/api/people/{x['id']}").status_code == 204
+    vijay = next(p for p in linked.get("/api/trees/1").json["people"] if p["full_name"] == "Vijay")
+    assert vijay["linked_to"] == []

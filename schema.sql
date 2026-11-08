@@ -26,9 +26,25 @@ CREATE TABLE persons (
 	gender VARCHAR(1) NOT NULL, 
 	birth_date DATE, 
 	photo_url TEXT, 
+	phone VARCHAR(30), 
+	address TEXT, 
+	photo BYTEA, 
+	photo_mime VARCHAR(20), 
+	photo_updated TIMESTAMP WITHOUT TIME ZONE, 
 	PRIMARY KEY (id), 
 	CHECK (gender IN ('M','F')), 
 	FOREIGN KEY(tree_id) REFERENCES trees (id) ON DELETE CASCADE
+);
+
+CREATE TABLE person_links (
+	id SERIAL NOT NULL, 
+	person_a INTEGER NOT NULL, 
+	person_b INTEGER NOT NULL, 
+	status VARCHAR(10) NOT NULL, 
+	PRIMARY KEY (id), 
+	CHECK (person_a <> person_b), 
+	FOREIGN KEY(person_a) REFERENCES persons (id) ON DELETE CASCADE, 
+	FOREIGN KEY(person_b) REFERENCES persons (id) ON DELETE CASCADE
 );
 
 CREATE TABLE relationships (

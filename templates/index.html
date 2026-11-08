@@ -75,6 +75,16 @@
   label.check { font-size: 13px; display: flex; gap: 6px; align-items: center; }
   button.danger { background: transparent; color: #c0392b; border: 1px solid #c0392b; }
   [hidden] { display: none !important; }
+  .card.other rect.box { stroke-dasharray: 5 4; }
+  .card .badge { font-size: 13px; }
+  label.toggle { font-size: 13px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .links { margin: 14px 0 4px; padding: 10px; border-radius: 10px; background: var(--accent-soft);
+           font-size: 13px; display: grid; gap: 8px; }
+  .links .item { display: flex; gap: 6px; align-items: center; }
+  .links .item span { flex: 1; }
+  .links button { padding: 4px 8px; font-size: 12px; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--accent); margin-top: 10px; }
+  .empty { fill: var(--muted); font-size: 15px; }
   @media (max-width: 760px) {
     main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; height: auto; }
     aside { border-left: none; border-top: 1px solid var(--card-border); }
@@ -85,8 +95,10 @@
 <header>
   <h1>Uravu <span>உறவு</span></h1>
   <div class="controls">
-    <select id="treeSel"></select>
-    <select id="langSel"></select>
+    <select id="treeSel" aria-label="Family tree"></select>
+    <button type="button" class="secondary" id="newTreeBtn">+ New tree</button>
+    <label class="toggle"><input type="checkbox" id="linkedToggle"> Include linked families</label>
+    <select id="langSel" aria-label="Language"></select>
   </div>
 </header>
 <main>
@@ -104,7 +116,17 @@
         <dt>Phone</dt><dd id="dPhone"></dd>
         <dt>Address</dt><dd id="dAddress"></dd>
       </dl>
-      <div class="row">
+      <div class="links" id="linkList" hidden></div>
+      <details id="linkBox">
+        <summary>🔗 Same person in another tree…</summary>
+        <form id="linkForm">
+          <select name="tree" required></select>
+          <select name="person" required></select>
+          <button>Link as same person</button>
+          <div class="err" id="linkErr"></div>
+        </form>
+      </details>
+      <div class="row" style="margin-top:12px">
         <button type="button" class="secondary" id="editBtn">Edit details</button>
         <button type="button" class="danger" id="delBtn">Delete</button>
       </div>
@@ -149,7 +171,7 @@
 
 <script>
 const CARD_W = 150, CARD_H = 92, GAP_X = 24, GAP_Y = 80, PAD = 30;
-let state = { tree: null, selected: null, lang: "ta", kin: {} };
+let state = { tree: null, selected: null, lang: "ta", kin: {}, linked: false, trees: [] };
 
 const $ = s => document.querySelector(s);
 const api = (url, opts) => fetch(url, opts).then(async r => {
@@ -163,19 +185,44 @@ async function init() {
   $("#langSel").innerHTML = Object.entries(langs)
     .map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
   $("#langSel").value = state.lang;
-  const trees = await api("/api/trees");
-  $("#treeSel").innerHTML = trees.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
-  if (trees.length) await loadTree(trees[0].id);
-  $("#treeSel").onchange = e => loadTree(e.target.value);
+  await refreshTrees();
+  if (state.trees.length) await loadTree(state.trees[0].id);
+  $("#treeSel").onchange = e => { state.selected = null; clearDetails(); loadTree(e.target.value); };
   $("#langSel").onchange = e => { state.lang = e.target.value; select(state.selected); };
+  $("#linkedToggle").onchange = e => { state.linked = e.target.checked; loadTree(state.tree.id); };
+}
+
+async function refreshTrees() {
+  state.trees = await api("/api/trees");
+  $("#treeSel").innerHTML = state.trees
+    .map(t => `<option value="${t.id}">${esc(t.name)} (${t.people})</option>`).join("");
+  if (state.tree) $("#treeSel").value = state.tree.id;
 }
 
 async function loadTree(id) {
-  state.tree = await api(`/api/trees/${id}`);
+  state.tree = await api(`/api/trees/${id}${state.linked ? "?linked=1" : ""}`);
+  $("#treeSel").value = state.tree.id;
   state.kin = {};
   draw();
   if (state.selected && byId(state.selected)) select(state.selected);
+  else if (state.selected) { state.selected = null; clearDetails(); }
 }
+
+function clearDetails() {
+  $("#details").hidden = true;
+  $("#selTitle").textContent = "Pick a person";
+}
+
+$("#newTreeBtn").onclick = async () => {
+  const name = prompt("Name for the new family tree (e.g. Kumar Family):");
+  if (!name || !name.trim()) return;
+  const t = await api("/api/trees", { method: "POST", headers: { "Content-Type": "application/json" },
+                                       body: JSON.stringify({ name }) });
+  state.selected = null; clearDetails();
+  state.tree = { id: t.id };
+  await refreshTrees();
+  await loadTree(t.id);
+};
 
 const byId = id => state.tree.people.find(p => p.id === +id);
 
@@ -280,14 +327,19 @@ function draw() {
     const avatar = p.photo_url
       ? `<image href="${esc(p.photo_url)}" x="8" y="6" width="34" height="34" preserveAspectRatio="xMidYMid slice" clip-path="url(#avClip)"/>`
       : `<text class="initial" x="25" y="29" text-anchor="middle">${esc(p.full_name[0] || "?")}</text>`;
-    out += `<g class="card ${p.gender}${sel ? " selected" : ""}" data-id="${p.id}" transform="translate(${px},${py})">
+    const linkedBadge = p.linked_to?.length
+      ? `<text class="badge" x="${CARD_W - 8}" y="20" text-anchor="end">🔗</text>` : "";
+    const sub = p.from_other_tree ? `${year} · ${p.tree_name}` : year;
+    out += `<g class="card ${p.gender}${sel ? " selected" : ""}${p.from_other_tree ? " other" : ""}" data-id="${p.id}" transform="translate(${px},${py})">
       <title>${esc(k?.a_calls_b?.description || p.full_name)}</title>
       <rect class="box" width="${CARD_W}" height="${CARD_H}" rx="12"/>
       <circle class="avatar-bg" cx="25" cy="23" r="17"/>${avatar}
       <text class="name" x="49" y="21">${esc(trim(p.full_name, 13))}</text>
-      <text class="year" x="49" y="36">${year}</text>
-      ${termText}</g>`;
+      <text class="year" x="49" y="36">${esc(trim(sub, 16))}</text>
+      ${linkedBadge}${termText}</g>`;
   });
+  if (!people.length) out = `<text class="empty" x="${PAD}" y="${PAD + 20}">This tree is empty. Add the first person on the right.</text>`;
+  if (!people.length) { svg.setAttribute("width", 520); svg.setAttribute("height", 120); }
   svg.innerHTML = `<defs><clipPath id="avClip" clipPathUnits="userSpaceOnUse">
     <circle cx="25" cy="23" r="17"/></clipPath></defs>` + out;
   svg.querySelectorAll(".card").forEach(g => g.onclick = () => select(+g.dataset.id));
@@ -304,7 +356,7 @@ async function select(id) {
   $("#selHint").textContent = "Cards show what " + p.full_name +
     " calls each relative. Hover a card for the full relationship.";
   showDetails(p);
-  state.kin = await api(`/api/trees/${state.tree.id}/kinship/${id}?lang=${state.lang}`);
+  state.kin = await api(`/api/trees/${state.tree.id}/kinship/${id}?lang=${state.lang}${state.linked ? "&linked=1" : ""}`);
   draw();
 }
 
@@ -321,7 +373,59 @@ function showDetails(p) {
   $("#dAddress").innerHTML = p.address
     ? `<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address)}">${esc(p.address)}</a>`
     : "—";
+  showLinks(p);
 }
+
+function showLinks(p) {
+  const box = $("#linkList");
+  box.hidden = !p.linked_to?.length;
+  box.innerHTML = (p.linked_to || []).map(l => `<div class="item">
+      <span>🔗 Same person in <b>${esc(l.tree_name)}</b></span>
+      <button type="button" class="secondary" data-open="${l.tree_id}:${l.person_id}">Open</button>
+      ${l.link_id ? `<button type="button" class="danger" data-unlink="${l.link_id}">Unlink</button>` : ""}
+    </div>`).join("");
+  box.querySelectorAll("[data-open]").forEach(b => b.onclick = async () => {
+    const [tid, pid] = b.dataset.open.split(":").map(Number);
+    state.selected = pid;
+    await loadTree(tid);
+  });
+  box.querySelectorAll("[data-unlink]").forEach(b => b.onclick = async () => {
+    if (!confirm("Remove this link? Both people stay in their own trees.")) return;
+    await api(`/api/links/${b.dataset.unlink}`, { method: "DELETE" });
+    await loadTree(state.tree.id);
+  });
+  // link form: other trees, same-gender people
+  const f = $("#linkForm"), mine = new Set([p.tree_id, ...(p.linked_to || []).map(l => l.tree_id)]);
+  const others = state.trees.filter(t => !mine.has(t.id));
+  $("#linkBox").hidden = !others.length;
+  $("#linkErr").textContent = "";
+  f.elements.tree.innerHTML = `<option value="">— pick a tree —</option>` +
+    others.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
+  f.elements.person.innerHTML = "";
+}
+
+$("#linkForm").elements.tree.onchange = async e => {
+  const sel = $("#linkForm").elements.person, me = byId(state.selected);
+  sel.innerHTML = "";
+  if (!e.target.value) return;
+  const t = await api(`/api/trees/${e.target.value}`);
+  const matches = t.people.filter(x => x.gender === me.gender);
+  sel.innerHTML = matches.length
+    ? matches.map(x => `<option value="${x.id}">${esc(x.full_name)}${x.birth_date ? " (" + x.birth_date.slice(0, 4) + ")" : ""}</option>`).join("")
+    : `<option value="">No ${me.gender === "M" ? "men" : "women"} in that tree yet</option>`;
+};
+
+$("#linkForm").onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  if (!f.elements.person.value) return;
+  try {
+    await api("/api/links", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ person_a: state.selected, person_b: +f.elements.person.value }) });
+    $("#linkBox").open = false;
+    await loadTree(state.tree.id);
+  } catch (err) { $("#linkErr").textContent = err.message; }
+};
 
 // Shrink photos in the browser (max 400px JPEG) so uploads stay small
 async function readPhoto(file) {
@@ -363,9 +467,9 @@ $("#delBtn").onclick = async () => {
   if (!confirm(`Delete ${p.full_name} and their links? This can't be undone.`)) return;
   await api(`/api/people/${p.id}`, { method: "DELETE" });
   state.selected = null; state.kin = {};
-  $("#details").hidden = true;
-  $("#selTitle").textContent = "Pick a person";
+  clearDetails();
   await loadTree(state.tree.id);
+  await refreshTrees();
 };
 
 $("#addForm").onsubmit = async e => {
@@ -376,10 +480,12 @@ $("#addForm").onsubmit = async e => {
   try {
     f.photo = await readPhoto(e.target.elements.photo.files[0]);
     await api("/api/people", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...f, tree_id: state.tree.id, relative_id: state.selected,
+      body: JSON.stringify({ ...f, relative_id: state.selected,
+                             tree_id: (f.relation && byId(state.selected)?.tree_id) || state.tree.id,
                              birth_date: f.birth_date || null, relation: f.relation || null }) });
     e.target.reset();
     await loadTree(state.tree.id);
+    await refreshTrees();
   } catch (err) { $("#err").textContent = err.message; }
 };
 

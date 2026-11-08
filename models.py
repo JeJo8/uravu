@@ -64,6 +64,17 @@ class Relationship(Base):
     __table_args__ = (CheckConstraint("type IN ('parent','spouse')"),)
 
 
+class PersonLink(Base):
+    """Two cards in different trees that are the same real person
+    (e.g. a wife in her husband's tree and in her own family's tree)."""
+    __tablename__ = "person_links"
+    id = Column(Integer, primary_key=True)
+    person_a = Column(Integer, ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    person_b = Column(Integer, ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(10), nullable=False, default="approved")  # 'pending' later, with logins
+    __table_args__ = (CheckConstraint("person_a <> person_b"),)
+
+
 class KinshipTerm(Base):
     __tablename__ = "kinship_terms"
     id = Column(Integer, primary_key=True)
