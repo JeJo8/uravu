@@ -86,9 +86,14 @@ $("#sheetAdd").onclick = () => {
 };
 
 // relation chips: tap the chosen one again to clear it
+function syncShareChips() {
+  const rel = document.querySelector("#relChips input:checked")?.value;
+  $("#shareChips").hidden = rel !== "brother" && rel !== "sister";
+}
 document.querySelectorAll("#relChips input").forEach(r => {
   r.onpointerdown = () => { r.dataset.was = r.checked; };
-  r.onclick = () => { if (r.dataset.was === "true") r.checked = false; r.dataset.was = r.checked; };
+  r.onclick = () => { if (r.dataset.was === "true") r.checked = false; r.dataset.was = r.checked; syncShareChips(); };
+  r.addEventListener("change", syncShareChips);
 });
 
 // ---------- zoom
@@ -471,6 +476,7 @@ $("#addForm").onsubmit = async e => {
                              tree_id: (f.relation && byId(state.selected)?.tree_id) || state.tree.id,
                              birth_date: f.birth_date || null, relation: f.relation || null }) });
     e.target.reset();
+    syncShareChips();
     setSheet(false);
     await loadTree(state.tree.id);
     await refreshTrees();

@@ -373,6 +373,12 @@
             <label class="chip"><input type="radio" name="relation" value="brother">Brother</label>
             <label class="chip"><input type="radio" name="relation" value="sister">Sister</label>
           </fieldset>
+          <fieldset class="chips" id="shareChips" hidden>
+            <legend>Parents they share</legend>
+            <label class="chip"><input type="radio" name="shares" value="both" checked>Same parents</label>
+            <label class="chip"><input type="radio" name="shares" value="father">Same father only</label>
+            <label class="chip"><input type="radio" name="shares" value="mother">Same mother only</label>
+          </fieldset>
           <label class="field">Name<input name="full_name" required placeholder="Full name" autocomplete="off"></label>
           <label class="field">Name in native script <span class="opt">(optional)</span><input name="native_name" class="ta" placeholder="பெயர்"></label>
           <div class="two">

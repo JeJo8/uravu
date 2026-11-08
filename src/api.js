@@ -123,6 +123,7 @@ async function addPerson(d) {
   let treeId = +d.tree_id;
   const rel = d.relation || null, rid = d.relative_id ? +d.relative_id : null;
   let parentIds = [];
+  let placeholder = null;
 
   if (rel && rid) {
     if (!RELATIONS.includes(rel)) fail(`Unknown relation '${rel}'`);
@@ -132,32 +133,58 @@ async function addPerson(d) {
       fail("That relative isn't in this tree or a linked one");
     }
     if (rel === "brother" || rel === "sister") {
+      // Siblings are joined through their parents. "shares" picks which parents
+      // (half-siblings share only a father or only a mother).
+      const shares = ["father", "mother"].includes(d.shares) ? d.shares : "both";
       // parents may live in a linked tree (e.g. a wife's parents in her family's tree)
       const copies = samePersonIds(data, rid);
-      parentIds = [...new Set(data.relationships
-        .filter(r => r.type === "parent" && copies.has(r.related_id)).map(r => r.person_id))];
-      if (!parentIds.length) fail("Add a parent first, so siblings can be linked through them.");
-      // the new sibling belongs in the parents' tree
-      treeId = data.persons.find(p => p.id === Math.min(...parentIds)).tree_id;
-      if (!editableTrees(data).includes(treeId)) {
-        const name = data.trees.find(t => t.id === treeId)?.name;
-        fail(`Siblings go in the parents' tree (${name}). Ask an editor of ${name} to add them.`);
+      let parents = [...new Set(data.relationships
+        .filter(r => r.type === "parent" && copies.has(r.related_id)).map(r => r.person_id))]
+        .map(id => data.persons.find(p => p.id === id)).filter(Boolean);
+      if (shares !== "both") parents = parents.filter(p => p.gender === (shares === "father" ? "M" : "F"));
+      if (parents.length) {
+        parentIds = parents.map(p => p.id);
+        // the new sibling belongs in the parents' tree
+        treeId = data.persons.find(p => p.id === Math.min(...parentIds)).tree_id;
+        if (!editableTrees(data).includes(treeId)) {
+          const name = data.trees.find(t => t.id === treeId)?.name;
+          fail(`Siblings go in the parents' tree (${name}). Ask an editor of ${name} to add them.`);
+        }
+      } else {
+        // Parent not in the tree yet (often the name isn't known): add a stand-in
+        // "Unknown father/mother" that can be renamed later.
+        treeId = relative.tree_id;
+        placeholder = shares === "mother" ? { full_name: "Unknown mother", gender: "F" }
+                                          : { full_name: "Unknown father", gender: "M" };
       }
     }
   }
 
   const created = check(await db.from("persons").insert({ ...fields, tree_id: treeId })
     .select(PERSON_COLS).single(), "Couldn't add this person");
+  const madeIds = [created.id];
+
+  if (placeholder) {
+    const res = await db.from("persons").insert({ ...placeholder, tree_id: treeId }).select("id").single();
+    if (res.error) {
+      await db.from("persons").delete().eq("id", created.id);
+      fail(friendlyError(res.error));
+    }
+    madeIds.push(res.data.id);
+    parentIds = [res.data.id];
+  }
 
   if (rel && rid) {
     const links =
       rel === "father" || rel === "mother" ? [{ person_id: created.id, related_id: rid, type: "parent" }]
       : rel === "son" || rel === "daughter" ? [{ person_id: rid, related_id: created.id, type: "parent" }]
       : rel === "husband" || rel === "wife" ? [{ person_id: rid, related_id: created.id, type: "spouse" }]
-      : parentIds.map(pid => ({ person_id: pid, related_id: created.id, type: "parent" }));
+      : [...parentIds.map(pid => ({ person_id: pid, related_id: created.id, type: "parent" })),
+         // a new stand-in parent is also the parent of the person we started from
+         ...(placeholder ? [{ person_id: parentIds[0], related_id: rid, type: "parent" }] : [])];
     const res = await db.from("relationships").insert(links);
     if (res.error) {
-      await db.from("persons").delete().eq("id", created.id);   // undo, so no orphan is left
+      await db.from("persons").delete().in("id", madeIds);   // undo, so nothing is left half-added
       fail(friendlyError(res.error));
     }
   }
