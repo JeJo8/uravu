@@ -11,3 +11,5 @@ services:
         sync: false   # paste your Neon connection string in the Render dashboard
       - key: PYTHON_VERSION
         value: 3.12.7
+      - key: APP_PASSWORD
+        sync: false   # family login password; username is "family"

@@ -27,7 +27,7 @@
   h1 { margin: 0; font-size: 20px; }
   h1 span { color: var(--accent); font-family: "Noto Sans Tamil"; margin-left: 6px; }
   .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  select, input, button { font: inherit; font-size: 14px; padding: 7px 10px;
+  select, input, textarea, button { font: inherit; font-size: 14px; padding: 7px 10px;
     border-radius: 8px; border: 1px solid var(--card-border);
     background: var(--panel); color: var(--ink); }
   button { background: var(--accent); color: #fff; border: none; cursor: pointer; }
@@ -51,10 +51,30 @@
   .card .back { font-size: 10.5px; fill: var(--muted); }
   path.link { fill: none; stroke: var(--line); stroke-width: 1.5; }
   line.spouse { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; }
-  form { display: grid; gap: 8px; margin-top: 10px; }
+  form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 10px; }
   .pair { background: var(--accent-soft); border-radius: 10px; padding: 10px;
           margin-top: 12px; font-size: 13px; line-height: 1.6; }
   .err { color: #c0392b; font-size: 13px; }
+  .card .avatar-bg { fill: var(--panel); stroke: var(--card-border); }
+  .card .initial { font-weight: 700; font-size: 15px; fill: var(--muted); }
+  #details { margin-top: 6px; }
+  .profile { display: flex; gap: 12px; align-items: center; }
+  .profile img, .profile .ph { width: 72px; height: 72px; border-radius: 50%;
+    object-fit: cover; flex: none; border: 1px solid var(--card-border); }
+  .profile .ph { display: grid; place-items: center; font-size: 28px; font-weight: 700;
+    color: var(--muted); background: var(--bg); }
+  dl { display: grid; grid-template-columns: 64px 1fr; gap: 6px 8px; font-size: 13px;
+       margin: 12px 0; }
+  dt { color: var(--muted); } dd { margin: 0; word-break: break-word; white-space: pre-line; }
+  a { color: var(--accent); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  aside input:not([type=checkbox]), aside select, aside textarea { width: 100%; min-width: 0; }
+  .row > * { min-width: 0; }
+  label.file { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+  label.check { font-size: 13px; display: flex; gap: 6px; align-items: center; }
+  button.danger { background: transparent; color: #c0392b; border: 1px solid #c0392b; }
+  [hidden] { display: none !important; }
   @media (max-width: 760px) {
     main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; height: auto; }
     aside { border-left: none; border-top: 1px solid var(--card-border); }
@@ -76,12 +96,44 @@
     <p class="hint" id="selHint">Click anyone in the tree. Every card then shows what
       <b>they</b> call that relative, and what the relative calls them back.</p>
 
+    <div id="details" hidden>
+      <div class="profile"><div id="dPhoto"></div>
+        <div class="hint" id="dSub"></div></div>
+      <dl>
+        <dt>Born</dt><dd id="dBorn"></dd>
+        <dt>Phone</dt><dd id="dPhone"></dd>
+        <dt>Address</dt><dd id="dAddress"></dd>
+      </dl>
+      <div class="row">
+        <button type="button" class="secondary" id="editBtn">Edit details</button>
+        <button type="button" class="danger" id="delBtn">Delete</button>
+      </div>
+      <form id="editForm" hidden>
+        <input name="full_name" placeholder="Name" required>
+        <input name="native_name" placeholder="Name in native script">
+        <div class="row">
+          <select name="gender"><option value="M">Male</option><option value="F">Female</option></select>
+          <input name="birth_date" type="date">
+        </div>
+        <input name="phone" type="tel" placeholder="Phone, e.g. +91 98765 43210">
+        <textarea name="address" rows="3" placeholder="Address"></textarea>
+        <label class="file">Photo <input name="photo" type="file" accept="image/*"></label>
+        <label class="check"><input name="remove_photo" type="checkbox"> Remove current photo</label>
+        <div class="row"><button>Save</button>
+          <button type="button" class="secondary" id="cancelEdit">Cancel</button></div>
+        <div class="err" id="editErr"></div>
+      </form>
+    </div>
+
     <h2 style="margin-top:22px">Add a relative</h2>
     <form id="addForm">
       <input name="full_name" placeholder="Name" required>
       <input name="native_name" placeholder="Name in native script (optional)">
       <select name="gender"><option value="M">Male</option><option value="F">Female</option></select>
       <input name="birth_date" type="date" title="Birth date (needed for elder/younger terms)">
+      <input name="phone" type="tel" placeholder="Phone (optional)">
+      <textarea name="address" rows="2" placeholder="Address (optional)"></textarea>
+      <label class="file">Photo (optional) <input name="photo" type="file" accept="image/*"></label>
       <select name="relation">
         <option value="">— relation to selected person —</option>
         <option>father</option><option>mother</option>
@@ -225,14 +277,19 @@ function draw() {
       if (b) termText += `<text class="back" x="${CARD_W/2}" y="86" text-anchor="middle">calls back: ${esc(trim(b.term || b.description, 18))}</text>`;
     }
     const year = p.birth_date ? p.birth_date.slice(0, 4) : "";
+    const avatar = p.photo_url
+      ? `<image href="${esc(p.photo_url)}" x="8" y="6" width="34" height="34" preserveAspectRatio="xMidYMid slice" clip-path="url(#avClip)"/>`
+      : `<text class="initial" x="25" y="29" text-anchor="middle">${esc(p.full_name[0] || "?")}</text>`;
     out += `<g class="card ${p.gender}${sel ? " selected" : ""}" data-id="${p.id}" transform="translate(${px},${py})">
       <title>${esc(k?.a_calls_b?.description || p.full_name)}</title>
       <rect class="box" width="${CARD_W}" height="${CARD_H}" rx="12"/>
-      <text class="name" x="${CARD_W/2}" y="22" text-anchor="middle">${esc(trim(p.full_name, 18))}</text>
-      <text class="year" x="${CARD_W/2}" y="37" text-anchor="middle">${year}</text>
+      <circle class="avatar-bg" cx="25" cy="23" r="17"/>${avatar}
+      <text class="name" x="49" y="21">${esc(trim(p.full_name, 13))}</text>
+      <text class="year" x="49" y="36">${year}</text>
       ${termText}</g>`;
   });
-  svg.innerHTML = out;
+  svg.innerHTML = `<defs><clipPath id="avClip" clipPathUnits="userSpaceOnUse">
+    <circle cx="25" cy="23" r="17"/></clipPath></defs>` + out;
   svg.querySelectorAll(".card").forEach(g => g.onclick = () => select(+g.dataset.id));
 }
 
@@ -246,9 +303,70 @@ async function select(id) {
   $("#selTitle").textContent = p.full_name + (p.native_name ? ` (${p.native_name})` : "");
   $("#selHint").textContent = "Cards show what " + p.full_name +
     " calls each relative. Hover a card for the full relationship.";
+  showDetails(p);
   state.kin = await api(`/api/trees/${state.tree.id}/kinship/${id}?lang=${state.lang}`);
   draw();
 }
+
+function showDetails(p) {
+  $("#details").hidden = false;
+  $("#editForm").hidden = true;
+  $("#dPhoto").innerHTML = p.photo_url
+    ? `<img src="${esc(p.photo_url)}" alt="${esc(p.full_name)}">`
+    : `<div class="ph">${esc(p.full_name[0] || "?")}</div>`;
+  $("#dSub").textContent = p.native_name || "";
+  $("#dBorn").textContent = p.birth_date || "—";
+  $("#dPhone").innerHTML = p.phone
+    ? `<a href="tel:${esc(p.phone.replace(/[^+\d]/g, ""))}">${esc(p.phone)}</a>` : "—";
+  $("#dAddress").innerHTML = p.address
+    ? `<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address)}">${esc(p.address)}</a>`
+    : "—";
+}
+
+// Shrink photos in the browser (max 400px JPEG) so uploads stay small
+async function readPhoto(file) {
+  if (!file || !file.size) return null;
+  const img = await createImageBitmap(file);
+  const scale = Math.min(1, 400 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.82);
+}
+
+$("#editBtn").onclick = () => {
+  const p = byId(state.selected), f = $("#editForm");
+  for (const k of ["full_name", "native_name", "gender", "birth_date", "phone", "address"])
+    f.elements[k].value = p[k] || "";
+  f.elements.photo.value = ""; f.elements.remove_photo.checked = false;
+  $("#editErr").textContent = "";
+  f.hidden = false;
+};
+$("#cancelEdit").onclick = () => { $("#editForm").hidden = true; };
+
+$("#editForm").onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target, body = {};
+  for (const k of ["full_name", "native_name", "gender", "phone", "address"]) body[k] = f.elements[k].value;
+  body.birth_date = f.elements.birth_date.value || null;
+  body.remove_photo = f.elements.remove_photo.checked;
+  try {
+    body.photo = await readPhoto(f.elements.photo.files[0]);
+    await api(`/api/people/${state.selected}`, { method: "PUT",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    await loadTree(state.tree.id);
+  } catch (err) { $("#editErr").textContent = err.message; }
+};
+
+$("#delBtn").onclick = async () => {
+  const p = byId(state.selected);
+  if (!confirm(`Delete ${p.full_name} and their links? This can't be undone.`)) return;
+  await api(`/api/people/${p.id}`, { method: "DELETE" });
+  state.selected = null; state.kin = {};
+  $("#details").hidden = true;
+  $("#selTitle").textContent = "Pick a person";
+  await loadTree(state.tree.id);
+};
 
 $("#addForm").onsubmit = async e => {
   e.preventDefault();
@@ -256,6 +374,7 @@ $("#addForm").onsubmit = async e => {
   const f = Object.fromEntries(new FormData(e.target));
   if (f.relation && !state.selected) { $("#err").textContent = "Select a person in the tree first."; return; }
   try {
+    f.photo = await readPhoto(e.target.elements.photo.files[0]);
     await api("/api/people", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...f, tree_id: state.tree.id, relative_id: state.selected,
                              birth_date: f.birth_date || null, relation: f.relation || null }) });

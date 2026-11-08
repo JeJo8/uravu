@@ -1,7 +1,8 @@
 import os
 from sqlalchemy import (create_engine, Column, Integer, String, Date, Text,
-                        ForeignKey, CheckConstraint)
-from sqlalchemy.orm import declarative_base, sessionmaker
+                        ForeignKey, CheckConstraint, LargeBinary, DateTime,
+                        inspect, text)
+from sqlalchemy.orm import declarative_base, sessionmaker, deferred
 
 
 def _db_url():
@@ -33,14 +34,25 @@ class Person(Base):
     native_name = Column(String(120))
     gender = Column(String(1), nullable=False)          # 'M' / 'F'
     birth_date = Column(Date)
-    photo_url = Column(Text)
+    photo_url = Column(Text)                            # optional external link
+    phone = Column(String(30))
+    address = Column(Text)
+    # Small resized photo kept in Postgres (Render's disk is wiped on each deploy).
+    # deferred = not loaded unless asked for, so tree queries stay fast.
+    photo = deferred(Column(LargeBinary))
+    photo_mime = Column(String(20))
+    photo_updated = Column(DateTime)
     __table_args__ = (CheckConstraint("gender IN ('M','F')"),)
 
     def to_dict(self):
+        if self.photo_updated:
+            photo = f"/api/people/{self.id}/photo?v={int(self.photo_updated.timestamp())}"
+        else:
+            photo = self.photo_url
         return {"id": self.id, "tree_id": self.tree_id, "full_name": self.full_name,
                 "native_name": self.native_name, "gender": self.gender,
                 "birth_date": self.birth_date.isoformat() if self.birth_date else None,
-                "photo_url": self.photo_url}
+                "phone": self.phone, "address": self.address, "photo_url": photo}
 
 
 class Relationship(Base):
@@ -65,3 +77,18 @@ class KinshipTerm(Base):
     def to_dict(self):
         return {c: getattr(self, c) for c in
                 ("language", "path_code", "speaker_gender", "target_age", "term", "term_native")}
+
+
+def add_missing_columns():
+    """create_all() never alters existing tables, so add new columns by hand.
+    Safe to run on every deploy: only adds what's missing."""
+    insp = inspect(engine)
+    for table in Base.metadata.sorted_tables:
+        if not insp.has_table(table.name):
+            continue
+        existing = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name not in existing:
+                ddl = col.type.compile(dialect=engine.dialect)
+                with engine.begin() as conn:
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}'))

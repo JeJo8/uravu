@@ -16,6 +16,10 @@ calls back **Magan**. Switch to English → "Uncle" / "Nephew".
    matched against the `kinship_terms` table. No match → a plain description.
 3. **Reverse term**: the same lookup run from the other person.
 
+Each person can also have a **phone** (tap to call), **address** (opens Google Maps)
+and a **photo** (resized to 400px in the browser, stored in Postgres because
+Render's disk is wiped on every deploy).
+
 Add a language = add rows to `terms_seed.py` (no code changes).
 Tamil terms vary by region and family — review and adjust.
 
@@ -27,7 +31,7 @@ pip install -r requirements.txt
 flask --app app init-db       # tables + kinship terms (uses SQLite locally)
 flask --app app seed-demo     # sample 3-generation family
 flask --app app run           # http://127.0.0.1:5000
-pytest -q                     # 18 tests
+pytest -q                     # 22 tests
 ```
 
 ## Deploy: Neon + Render
@@ -37,8 +41,12 @@ pytest -q                     # 18 tests
 2. **GitHub**: push this folder to a new repo.
 3. **Render**: New → Blueprint → pick the repo (uses `render.yaml`).
    Paste the Neon string as `DATABASE_URL` when asked.
-4. The build runs `init-db`. For demo data, run once in the Render shell:
-   `flask --app app seed-demo`
+4. **Family password (recommended):** in Render → Environment add `APP_PASSWORD`.
+   The site then asks for a login: username `family`, that password.
+   Without it, anyone with the link can see phone numbers and addresses.
+5. The build runs `init-db`, which also adds new columns to existing tables.
+6. Demo data (Render's free plan has no Shell, so run it on your machine):
+   `export DATABASE_URL='<neon string>' && flask --app app seed-demo`
 
 ## API
 
@@ -48,11 +56,11 @@ pytest -q                     # 18 tests
 | GET | `/api/trees/<id>/kinship/<person_id>?lang=ta` | what that person calls everyone |
 | GET | `/api/kinship?a=1&b=5&lang=en` | one pair, both directions |
 | POST | `/api/people` | add person (+ `relative_id`, `relation`: father/mother/son/daughter/husband/wife/brother/sister) |
-| PUT / DELETE | `/api/people/<id>` | edit / remove |
+| PUT / DELETE | `/api/people/<id>` | edit (incl. `phone`, `address`, `photo` data URL, `remove_photo`) / remove |
+| GET | `/api/people/<id>/photo` | the stored photo |
 | POST | `/api/relationships` | raw link: `type` parent or spouse |
 
 ## Next ideas
 - Login + private trees, share link
-- Photos (Cloudinary)
 - Hindi, Telugu, Malayalam terms
-- Edit/delete in the UI, drag to pan on mobile
+- Drag to pan on mobile

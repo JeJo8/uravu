@@ -74,3 +74,59 @@ def test_add_relatives(client):
     r = client.post("/api/people", json={"tree_id": 1, "full_name": "X", "gender": "M",
                                          "relative_id": pid("Ramasamy"), "relation": "brother"})
     assert r.status_code == 400 and "parent" in r.json["error"]
+
+
+# ---------------------------------------------------------------- contact details & photos
+import base64  # noqa: E402
+
+TINY_PNG = "data:image/png;base64," + base64.b64encode(bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")).decode()
+
+
+def test_phone_address_photo(client):
+    r = client.post("/api/people", json={"tree_id": 1, "full_name": "Mani", "gender": "M",
+                                         "phone": "+91 98765 43210", "address": "12 Temple St\nMadurai",
+                                         "photo": TINY_PNG})
+    assert r.status_code == 201
+    p = r.json
+    assert p["phone"] == "+91 98765 43210" and "Madurai" in p["address"]
+    img = client.get(p["photo_url"])
+    assert img.status_code == 200 and img.mimetype == "image/png"
+
+    r = client.put(f"/api/people/{p['id']}", json={"phone": "", "remove_photo": True})
+    assert r.json["phone"] is None and r.json["photo_url"] is None
+    assert client.get(f"/api/people/{p['id']}/photo").status_code == 404
+
+
+def test_rejects_bad_input(client):
+    pid_ = pid("Arun")
+    assert client.put(f"/api/people/{pid_}", json={"phone": "call me<script>"}).status_code == 400
+    assert client.put(f"/api/people/{pid_}", json={"photo": "data:text/html;base64,PGI+"}).status_code == 400
+    assert client.put(f"/api/people/{pid_}", json={"full_name": "  "}).status_code == 400
+
+
+def test_family_password(client, monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "secret")
+    assert client.get("/api/trees").status_code == 401
+    assert client.get("/healthz").status_code == 200
+    ok = "Basic " + base64.b64encode(b"family:secret").decode()
+    assert client.get("/api/trees", headers={"Authorization": ok}).status_code == 200
+
+
+def test_migration_adds_columns_to_old_table(tmp_path):
+    """Neon already has the old persons table: init-db must add the new columns."""
+    import sqlalchemy as sa
+    import models
+    old = sa.create_engine(f"sqlite:///{tmp_path/'old.db'}")
+    with old.begin() as c:
+        c.execute(sa.text("CREATE TABLE persons (id INTEGER PRIMARY KEY, tree_id INT, "
+                          "full_name TEXT, native_name TEXT, gender TEXT, birth_date DATE, photo_url TEXT)"))
+    real = models.engine
+    models.engine = old
+    try:
+        models.add_missing_columns()
+        cols = {c["name"] for c in sa.inspect(old).get_columns("persons")}
+    finally:
+        models.engine = real
+    assert {"phone", "address", "photo", "photo_mime", "photo_updated"} <= cols

@@ -1,20 +1,98 @@
-from datetime import date
+import base64
+import hmac
+import os
+from datetime import date, datetime, timezone
 
 import click
-from flask import Flask, jsonify, request, render_template, abort
+from flask import Flask, jsonify, request, render_template, abort, Response
 
 import kinship
 from models import (Base, engine, SessionLocal, Tree, Person, Relationship,
-                    KinshipTerm)
+                    KinshipTerm, add_missing_columns)
 from terms_seed import ALL_TERMS, LANGUAGES
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB request limit
+
+PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
+PHOTO_MAX_BYTES = 400 * 1024  # the browser shrinks photos to ~400px first
+
+
+# ---------------------------------------------------------------- family password
+# Set APP_PASSWORD on Render to make the whole site ask for a login.
+# Username is "family" (or APP_USER). Leave APP_PASSWORD unset to keep it open.
+
+@app.before_request
+def require_password():
+    password = os.environ.get("APP_PASSWORD")
+    if not password or request.path == "/healthz":
+        return None
+    auth = request.authorization
+    user = os.environ.get("APP_USER", "family")
+    if auth and hmac.compare_digest(auth.username or "", user) \
+            and hmac.compare_digest(auth.password or "", password):
+        return None
+    return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="Uravu"'})
 
 
 # ---------------------------------------------------------------- helpers
 
 def _date(s):
     return date.fromisoformat(s) if s else None
+
+
+def _clean(s, limit):
+    s = (s or "").strip()
+    return s[:limit] or None
+
+
+def _apply_details(p, d):
+    """Copy editable fields from request JSON onto a Person."""
+    if "full_name" in d:
+        name = _clean(d["full_name"], 120)
+        if not name:
+            return "Name can't be empty"
+        p.full_name = name
+    if "gender" in d:
+        if d["gender"] not in ("M", "F"):
+            return "gender must be M or F"
+        p.gender = d["gender"]
+    if "native_name" in d:
+        p.native_name = _clean(d["native_name"], 120)
+    if "phone" in d:
+        phone = _clean(d["phone"], 30)
+        if phone and not all(c.isdigit() or c in "+-() " for c in phone):
+            return "Phone can only contain digits, spaces and + - ( )"
+        p.phone = phone
+    if "address" in d:
+        p.address = _clean(d["address"], 500)
+    if "birth_date" in d:
+        try:
+            p.birth_date = _date(d["birth_date"])
+        except ValueError:
+            return "birth_date must be YYYY-MM-DD"
+    if d.get("remove_photo"):
+        p.photo, p.photo_mime, p.photo_updated = None, None, None
+    if d.get("photo"):
+        return _set_photo(p, d["photo"])
+    return None
+
+
+def _set_photo(p, data_url):
+    """data_url looks like 'data:image/jpeg;base64,....'"""
+    try:
+        header, b64 = data_url.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+        raw = base64.b64decode(b64, validate=True)
+    except (ValueError, IndexError):
+        return "Photo could not be read"
+    if mime not in PHOTO_TYPES:
+        return "Photo must be JPEG, PNG or WebP"
+    if len(raw) > PHOTO_MAX_BYTES:
+        return "Photo is too large"
+    p.photo, p.photo_mime = raw, mime
+    p.photo_updated = datetime.now(timezone.utc).replace(tzinfo=None)
+    return None
 
 
 def load_tree(db, tree_id):
@@ -120,9 +198,10 @@ def add_person():
     if d.get("gender") not in ("M", "F") or not d.get("full_name"):
         return {"error": "full_name and gender (M/F) are required"}, 400
     with SessionLocal() as db:
-        p = Person(tree_id=d["tree_id"], full_name=d["full_name"],
-                   native_name=d.get("native_name"), gender=d["gender"],
-                   birth_date=_date(d.get("birth_date")), photo_url=d.get("photo_url"))
+        p = Person(tree_id=d["tree_id"])
+        err = _apply_details(p, d)
+        if err:
+            return {"error": err}, 400
         db.add(p)
         db.flush()
         rel, rid = d.get("relation"), d.get("relative_id")
@@ -157,13 +236,23 @@ def _link(db, new, rid, rel):
 def edit_person(pid):
     with SessionLocal() as db:
         p = db.get(Person, pid) or abort(404)
-        for f in ("full_name", "native_name", "gender", "photo_url"):
-            if f in request.json:
-                setattr(p, f, request.json[f])
-        if "birth_date" in request.json:
-            p.birth_date = _date(request.json["birth_date"])
+        err = _apply_details(p, request.json)
+        if err:
+            db.rollback()
+            return {"error": err}, 400
         db.commit()
         return jsonify(p.to_dict())
+
+
+@app.get("/api/people/<int:pid>/photo")
+def person_photo(pid):
+    with SessionLocal() as db:
+        p = db.get(Person, pid) or abort(404)
+        if not p.photo:
+            abort(404)
+        # URL has ?v=<timestamp>, so the browser can cache it for a long time
+        return Response(p.photo, mimetype=p.photo_mime,
+                        headers={"Cache-Control": "private, max-age=31536000"})
 
 
 @app.delete("/api/people/<int:pid>")
@@ -194,6 +283,7 @@ def add_relationship():
 def init_db():
     """Create tables and load kinship terms."""
     Base.metadata.create_all(engine)
+    add_missing_columns()
     with SessionLocal() as db:
         db.query(KinshipTerm).delete()
         db.add_all(KinshipTerm(**t) for t in ALL_TERMS)
