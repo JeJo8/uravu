@@ -7,14 +7,11 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     envVars:
+      - key: VITE_NEON_AUTH_URL     # Neon Console > Auth URL (public)
+        value: https://ep-aged-flower-za5m9r45.neonauth.c-2.eu-west-2.aws.neon.tech/neondb/auth
       - key: VITE_NEON_DATA_API_URL
         sync: false   # Neon Console > Data API: https://ep-....apirest....neon.tech/neondb/rest/v1
     routes:
-      # Neon Auth served from this site, so Safari accepts the sign-in cookie.
-      # Change the destination if you move to another Neon project (Neon Console > Auth URL).
-      - type: rewrite
-        source: /api/auth/*
-        destination: https://ep-aged-flower-za5m9r45.neonauth.c-2.eu-west-2.aws.neon.tech/neondb/auth/*
       - type: rewrite
         source: /login
         destination: /auth.html

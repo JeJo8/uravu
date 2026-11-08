@@ -19,10 +19,10 @@ Neon Postgres: Row Level Security decides what each user may see or change
 There is no server of our own. The rules that used to live in Python now live
 in the database (`db/setup.sql`), so they can't be bypassed from the browser.
 
-**Safari:** Neon Auth is reached through this site's own `/api/auth/*` path
-(forwarded to Neon by `render.yaml`, and by `vite.config.js` during development).
-That keeps the sign-in cookie first-party; Safari blocks it when the app calls
-Neon's auth domain directly.
+**Safari (known issue):** the app calls Neon Auth on Neon's own domain, and
+Safari blocks that cross-site cookie, so Google sign-in fails there (Chrome works).
+The fix is to serve `/api/auth/*` from this site (`VITE_AUTH_PROXY=1`), which needs
+a host that forwards without adding `X-Forwarded-Host`. Render's rewrites add it.
 
 | File | What it does |
 |---|---|
@@ -65,7 +65,7 @@ Clients → your Web client → *Authorised redirect URIs*: add
 
 ### 3. Render
 New → Blueprint → this repo. Set `VITE_NEON_DATA_API_URL`.
-If your Neon Auth URL changes, update the `/api/auth/*` destination in `render.yaml`.
+`VITE_NEON_AUTH_URL` is set in `render.yaml`; change it if your Neon project changes.
 
 ### Run locally
 ```bash
