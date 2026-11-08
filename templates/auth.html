@@ -31,6 +31,13 @@
   .alt { font-size: 14px; color: var(--muted); margin-top: 16px; text-align: center; }
   a { color: var(--accent); }
   .tree { font-size: 18px; font-weight: 700; color: var(--ink); }
+  a.google { display: block; text-align: center; text-decoration: none; font-weight: 600;
+             font-size: 15px; padding: 11px; border-radius: 8px; border: 1px solid var(--border);
+             color: var(--ink); background: var(--panel); }
+  a.google:hover { border-color: var(--accent); }
+  .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 16px 0; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .notice { color: #c0392b; font-size: 14px; margin: 0 0 14px; }
 </style>
 </head>
 <body>
@@ -39,16 +46,26 @@
 
 {% if mode == 'login' %}
   <p>Log in to see your family trees.</p>
+  {% if error %}<div class="notice">{{ error }}</div>{% endif %}
+  {% if google %}
+  <a class="google" href="/auth/google?next={{ next|urlencode }}">Continue with Google</a>
+  <div class="or">or use email</div>
+  {% endif %}
   <form id="f" data-api="/api/auth/login">
     <label>Email <input name="email" type="email" autocomplete="email" required autofocus></label>
     <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
     <button>Log in</button>
     <div class="err" id="err"></div>
   </form>
-  <div class="alt">New here? <a href="/signup?next={{ next|urlencode }}">Create an account</a></div>
+  <div class="alt">New here? <a href="/signup?next={{ next|urlencode }}">Create an account</a>
+    {% if google %}<br><small>Signed up with Google? Use the Google button.</small>{% endif %}</div>
 
 {% elif mode == 'signup' %}
   <p>Create an account to build and share your family tree.</p>
+  {% if google %}
+  <a class="google" href="/auth/google?next={{ next|urlencode }}">Continue with Google</a>
+  <div class="or">or sign up with email</div>
+  {% endif %}
   <form id="f" data-api="/api/auth/signup">
     <label>Your name <input name="name" autocomplete="name" required autofocus maxlength="80"></label>
     <label>Email <input name="email" type="email" autocomplete="email" required></label>

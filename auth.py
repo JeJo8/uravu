@@ -12,7 +12,8 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
-from flask import (Blueprint, abort, g, jsonify, redirect, render_template,
+from authlib.integrations.flask_client import OAuth, OAuthError
+from flask import (Blueprint, abort, g, jsonify, redirect, render_template, url_for,
                    request, session)
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -24,6 +25,34 @@ bp = Blueprint("auth", __name__)
 RANK = {"viewer": 1, "editor": 2, "owner": 3}
 INVITE_DAYS = 7
 _DUMMY_HASH = generate_password_hash("not-a-real-password")
+
+# ---------------------------------------------------------------- Google sign-in
+oauth = OAuth()
+
+
+def google_enabled():
+    return bool(os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"))
+
+
+def init_oauth(app):
+    oauth.init_app(app)
+    if google_enabled():
+        oauth.register(
+            name="google",
+            client_id=os.environ["GOOGLE_CLIENT_ID"],
+            client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        )
+
+
+# Messages shown on the login page; only these fixed codes are accepted
+LOGIN_ERRORS = {
+    "google_cancelled": "Google sign-in was cancelled.",
+    "google_failed": "Google sign-in didn't work. Please try again.",
+    "google_unverified": "Your Google email isn't verified, so we can't use it.",
+    "google_off": "Google sign-in isn't set up yet. Use email and password.",
+}
 
 
 def _now():
@@ -46,6 +75,7 @@ def load_user():
 
     path = request.path
     public = path in ("/login", "/signup", "/healthz") or path.startswith("/api/auth/") \
+        or path.startswith("/auth/google") \
         or path.startswith("/static/")
     if g.user or public:
         return None
@@ -146,14 +176,17 @@ def _record_failure(*keys):
 def login_page():
     if g.user:
         return redirect(_safe_next(request.args.get("next")))
-    return render_template("auth.html", mode="login", next=_safe_next(request.args.get("next")))
+    return render_template("auth.html", mode="login", next=_safe_next(request.args.get("next")),
+                           google=google_enabled(),
+                           error=LOGIN_ERRORS.get(request.args.get("error")))
 
 
 @bp.get("/signup")
 def signup_page():
     if g.user:
         return redirect(_safe_next(request.args.get("next")))
-    return render_template("auth.html", mode="signup", next=_safe_next(request.args.get("next")))
+    return render_template("auth.html", mode="signup", next=_safe_next(request.args.get("next")),
+                           google=google_enabled())
 
 
 @bp.get("/join/<token>")
@@ -166,6 +199,57 @@ def join_page(token):
         current = role_for(db, g.user["id"], inv.tree_id)
         return render_template("auth.html", mode="join", token=token, tree_name=tree.name,
                                role=inv.role, current=current, user=g.user)
+
+
+@bp.get("/auth/google")
+def google_start():
+    if not google_enabled():
+        return redirect("/login?error=google_off")
+    session["after_login"] = _safe_next(request.args.get("next"))
+    callback = url_for("auth.google_callback", _external=True)
+    return oauth.google.authorize_redirect(callback)
+
+
+@bp.get("/auth/google/callback")
+def google_callback():
+    if not google_enabled():
+        return redirect("/login?error=google_off")
+    if request.args.get("error"):                    # user pressed cancel on Google's page
+        return redirect("/login?error=google_cancelled")
+    try:
+        # checks the state and nonce, and verifies Google's signed ID token
+        token = oauth.google.authorize_access_token()
+    except OAuthError:
+        return redirect("/login?error=google_failed")
+    info = token.get("userinfo") or {}
+    sub, email = info.get("sub"), (info.get("email") or "").strip().lower()
+    if not sub or not email:
+        return redirect("/login?error=google_failed")
+    if not info.get("email_verified"):
+        return redirect("/login?error=google_unverified")
+
+    with SessionLocal() as db:
+        u = db.query(User).filter_by(google_id=sub).first()
+        if not u:
+            # same verified email as an existing email/password account -> link them
+            u = db.query(User).filter_by(email=email).first()
+            if u:
+                u.google_id = sub
+                # Email sign-ups were never verified; Google just proved who owns this
+                # address, so drop any password someone else may have set with it.
+                u.password_hash = None
+            else:
+                name = (info.get("name") or email.split("@")[0]).strip()[:80]
+                u = User(name=name, email=email, google_id=sub, password_hash=None,
+                         created_at=_now())
+                db.add(u)
+            db.commit()
+        claim_unowned_trees(db, u)
+        after = session.get("after_login", "/")
+        session.clear()
+        session.permanent = True
+        session["uid"] = u.id
+    return redirect(_safe_next(after))
 
 
 # ---------------------------------------------------------------- auth API
@@ -210,7 +294,8 @@ def login():
     with SessionLocal() as db:
         u = db.query(User).filter_by(email=email).first()
         # check a dummy hash when the email is unknown, so timing gives nothing away
-        ok = check_password_hash(u.password_hash if u else _DUMMY_HASH, password) and u is not None
+        stored = u.password_hash if (u and u.password_hash) else _DUMMY_HASH
+        ok = check_password_hash(stored, password) and u is not None and bool(u.password_hash)
         if not ok:
             _record_failure(*keys)
             return {"error": "Wrong email or password"}, 401
@@ -243,6 +328,8 @@ def change_password():
         return {"error": "New password must be at least 8 characters"}, 400
     with SessionLocal() as db:
         u = db.get(User, g.user["id"])
+        if not u.password_hash:
+            return {"error": "You sign in with Google, so there's no password to change"}, 400
         if not check_password_hash(u.password_hash, d.get("current_password") or ""):
             _record_failure("ip:" + _client_ip())
             return {"error": "Current password is wrong"}, 400

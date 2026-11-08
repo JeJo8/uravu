@@ -15,3 +15,7 @@ services:
         generateValue: true   # signs the login cookie; Render makes a random one
       - key: OWNER_EMAIL
         sync: false   # your email: trees made before logins are given to this account
+      - key: GOOGLE_CLIENT_ID
+        sync: false   # from Google Cloud Console > Credentials (leave empty to hide the Google button)
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

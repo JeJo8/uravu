@@ -30,7 +30,10 @@ into one, so terms work across families: Priya's son → her brother = **Maama**
 Code: `family_view.py` merges linked cards before the kinship engine runs.
 
 ### Accounts and sharing
-Everyone signs up with name, email and password (stored hashed). You only see
+Everyone signs in with **Google** (one tap) or with name, email and password
+(stored hashed). If someone signs in with Google using the email of an existing
+account, the two are joined and the old password is removed, because email
+sign-ups are never verified and Google's are. You only see
 trees you're a member of. Roles per tree:
 
 | Role | Can |
@@ -59,7 +62,7 @@ flask --app app init-db       # tables + kinship terms (uses SQLite locally)
 flask --app app seed-demo     # sample 3-generation family
 flask --app app seed-linked-demo  # second family, linked through Priya
 flask --app app run           # http://127.0.0.1:5000
-pytest -q                     # 42 tests
+pytest -q                     # 50 tests
 ```
 
 ## Deploy: Neon + Render
@@ -71,8 +74,15 @@ pytest -q                     # 42 tests
    Paste the Neon string as `DATABASE_URL` when asked.
 4. **Accounts:** Render generates `SECRET_KEY`. Set `OWNER_EMAIL` to your email,
    then sign up with that email so the existing trees become yours.
-5. The build runs `init-db`, which also adds new columns to existing tables.
-6. Demo data (Render's free plan has no Shell, so run it on your machine):
+5. **Google sign-in** (optional, free):
+   1. console.cloud.google.com → new project → *Google Auth Platform*.
+   2. Branding: app name, support email. Audience: **External**, then **Publish**.
+   3. Clients → Create → *Web application*. Authorised redirect URIs:
+      `https://<your-app>.onrender.com/auth/google/callback` and
+      `http://127.0.0.1:5000/auth/google/callback`.
+   4. Put the Client ID and Secret in Render as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+6. The build runs `init-db`, which also adds new columns to existing tables.
+7. Demo data (Render's free plan has no Shell, so run it on your machine):
    `export DATABASE_URL='<neon string>' && flask --app app seed-demo && flask --app app seed-linked-demo`
 
 ## API
@@ -99,7 +109,7 @@ All API calls need a login; writes must be JSON (blocks cross-site form posts).
 
 ## Next ideas
 - Link requests with approval (other family's owner says yes)
-- Password reset by email, Google sign-in
+- Password reset by email
 - Suggest duplicates: same name + birth year in two trees
 - Hindi, Telugu, Malayalam terms
 - Drag to pan on mobile

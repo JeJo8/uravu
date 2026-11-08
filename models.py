@@ -80,7 +80,8 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(80), nullable=False)
     email = Column(String(254), nullable=False, unique=True)   # stored lower-case
-    password_hash = Column(String(255), nullable=False)
+    password_hash = Column(String(255))        # empty for Google-only accounts
+    google_id = Column(String(64))             # Google's permanent user id ("sub")
     created_at = Column(DateTime, nullable=False)
 
     def to_dict(self):
@@ -136,3 +137,18 @@ def add_missing_columns():
                 ddl = col.type.compile(dialect=engine.dialect)
                 with engine.begin() as conn:
                     conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}'))
+
+    if engine.dialect.name == "postgresql":
+        # columns that became optional (e.g. password for Google-only accounts)
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            db_cols = {c["name"]: c for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.nullable and col.name in db_cols and not db_cols[col.name]["nullable"]:
+                    with engine.begin() as conn:
+                        conn.execute(text(f'ALTER TABLE {table.name} ALTER COLUMN {col.name} DROP NOT NULL'))
+
+    if insp.has_table("users"):
+        with engine.begin() as conn:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_id ON users (google_id)"))

@@ -28,6 +28,11 @@ app.config.update(
     SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
+if os.environ.get("RENDER"):
+    # Render's proxy terminates HTTPS; trust its headers so Google gets https:// callback URLs
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+auth.init_oauth(app)
 app.register_blueprint(auth.bp)
 app.before_request(auth.require_json_for_writes)
 app.before_request(auth.load_user)
