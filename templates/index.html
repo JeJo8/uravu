@@ -85,6 +85,19 @@
   .links button { padding: 4px 8px; font-size: 12px; }
   details summary { cursor: pointer; font-size: 13px; color: var(--accent); margin-top: 10px; }
   .empty { fill: var(--muted); font-size: 15px; }
+  .who { font-size: 13px; color: var(--muted); }
+  dialog { border: 1px solid var(--card-border); border-radius: 14px; background: var(--panel);
+           color: var(--ink); width: min(520px, calc(100vw - 32px)); padding: 20px; }
+  dialog::backdrop { background: rgb(0 0 0 / .35); }
+  dialog h3 { margin: 0 0 10px; font-size: 15px; }
+  dialog section { margin-top: 18px; }
+  .mrow { display: flex; gap: 8px; align-items: center; padding: 8px 0;
+          border-bottom: 1px solid var(--card-border); font-size: 14px; }
+  .mrow .grow { flex: 1; min-width: 0; }
+  .mrow small { color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; }
+  .mrow select, .mrow button { padding: 5px 8px; font-size: 13px; }
+  .invite-url { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
   @media (max-width: 760px) {
     main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; height: auto; }
     aside { border-left: none; border-top: 1px solid var(--card-border); }
@@ -99,6 +112,9 @@
     <button type="button" class="secondary" id="newTreeBtn">+ New tree</button>
     <label class="toggle"><input type="checkbox" id="linkedToggle"> Include linked families</label>
     <select id="langSel" aria-label="Language"></select>
+    <button type="button" class="secondary" id="membersBtn">👥 Members</button>
+    <span class="who" id="who"></span>
+    <button type="button" class="secondary" id="logoutBtn">Log out</button>
   </div>
 </header>
 <main>
@@ -147,7 +163,9 @@
       </form>
     </div>
 
-    <h2 style="margin-top:22px">Add a relative</h2>
+    <p class="hint" id="viewerNote" hidden>You can view this tree. Ask an owner for editor access to make changes.</p>
+    <div id="addSection">
+    <h2 style="margin-top:22px" id="addTitle">Add a relative</h2>
     <form id="addForm">
       <input name="full_name" placeholder="Name" required>
       <input name="native_name" placeholder="Name in native script (optional)">
@@ -166,15 +184,43 @@
       <button>Add</button>
       <div class="err" id="err"></div>
     </form>
+    </div>
   </aside>
 </main>
 
+<dialog id="membersDlg">
+  <div class="row" style="align-items:center"><h3 id="mTitle" style="margin:0">Members</h3>
+    <button type="button" class="secondary" id="mClose" style="flex:none">Close</button></div>
+  <section id="mRename" hidden>
+    <form id="renameForm" style="margin:0"><div class="row">
+      <input name="name" maxlength="120" required aria-label="Tree name">
+      <button style="flex:none">Rename</button></div></form>
+  </section>
+  <section><h3>People with access</h3><div id="mList"></div></section>
+  <section id="mInvites" hidden>
+    <h3>Invite family</h3>
+    <p class="hint" style="margin:0 0 8px">Anyone with the link can join for 7 days. Send it on WhatsApp.</p>
+    <div class="row"><select id="invRole" aria-label="Invite role">
+      <option value="viewer">Can view</option><option value="editor">Can edit</option></select>
+      <button type="button" id="invBtn" style="flex:none">Create invite link</button></div>
+    <div id="invList"></div>
+  </section>
+  <section>
+    <div class="row"><button type="button" class="secondary" id="leaveBtn">Leave this tree</button>
+      <button type="button" class="danger" id="delTreeBtn" hidden>Delete tree</button></div>
+    <div class="err" id="mErr"></div>
+  </section>
+</dialog>
+
 <script>
 const CARD_W = 150, CARD_H = 92, GAP_X = 24, GAP_Y = 80, PAD = 30;
-let state = { tree: null, selected: null, lang: "ta", kin: {}, linked: false, trees: [] };
+let state = { tree: null, selected: null, lang: "ta", kin: {}, linked: false, trees: [], me: null };
+const JSON_HEADERS = { "Content-Type": "application/json" };
+const canEdit = treeId => (state.tree?.editable_tree_ids || []).includes(treeId);
 
 const $ = s => document.querySelector(s);
 const api = (url, opts) => fetch(url, opts).then(async r => {
+  if (r.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search); throw new Error("Please log in"); }
   const body = r.status === 204 ? null : await r.json();
   if (!r.ok) throw new Error(body?.error || r.statusText);
   return body;
@@ -185,8 +231,12 @@ async function init() {
   $("#langSel").innerHTML = Object.entries(langs)
     .map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
   $("#langSel").value = state.lang;
+  state.me = await api("/api/auth/me");
+  $("#who").textContent = state.me.name;
   await refreshTrees();
-  if (state.trees.length) await loadTree(state.trees[0].id);
+  const wanted = +new URLSearchParams(location.search).get("tree");
+  const first = state.trees.find(t => t.id === wanted) || state.trees[0];
+  if (first) await loadTree(first.id); else showNoTrees();
   $("#treeSel").onchange = e => { state.selected = null; clearDetails(); loadTree(e.target.value); };
   $("#langSel").onchange = e => { state.lang = e.target.value; select(state.selected); };
   $("#linkedToggle").onchange = e => { state.linked = e.target.checked; loadTree(state.tree.id); };
@@ -195,13 +245,26 @@ async function init() {
 async function refreshTrees() {
   state.trees = await api("/api/trees");
   $("#treeSel").innerHTML = state.trees
-    .map(t => `<option value="${t.id}">${esc(t.name)} (${t.people})</option>`).join("");
+    .map(t => `<option value="${t.id}">${esc(t.name)} (${t.people})${t.role === "viewer" ? " · view only" : ""}</option>`).join("");
   if (state.tree) $("#treeSel").value = state.tree.id;
+}
+
+function showNoTrees() {
+  state.tree = null;
+  $("#svg").setAttribute("width", 560); $("#svg").setAttribute("height", 120);
+  $("#svg").innerHTML = `<text class="empty" x="30" y="50">You don't have a family tree yet.</text>
+    <text class="empty" x="30" y="76">Click “+ New tree”, or open an invite link from your family.</text>`;
+  $("#addSection").hidden = true; $("#membersBtn").hidden = true;
+  $("#treeSel").hidden = true;
 }
 
 async function loadTree(id) {
   state.tree = await api(`/api/trees/${id}${state.linked ? "?linked=1" : ""}`);
+  $("#treeSel").hidden = false; $("#membersBtn").hidden = false;
   $("#treeSel").value = state.tree.id;
+  const editor = state.tree.role !== "viewer";
+  $("#addSection").hidden = !editor;
+  $("#viewerNote").hidden = editor;
   state.kin = {};
   draw();
   if (state.selected && byId(state.selected)) select(state.selected);
@@ -216,8 +279,7 @@ function clearDetails() {
 $("#newTreeBtn").onclick = async () => {
   const name = prompt("Name for the new family tree (e.g. Kumar Family):");
   if (!name || !name.trim()) return;
-  const t = await api("/api/trees", { method: "POST", headers: { "Content-Type": "application/json" },
-                                       body: JSON.stringify({ name }) });
+  const t = await api("/api/trees", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name }) });
   state.selected = null; clearDetails();
   state.tree = { id: t.id };
   await refreshTrees();
@@ -373,6 +435,8 @@ function showDetails(p) {
   $("#dAddress").innerHTML = p.address
     ? `<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address)}">${esc(p.address)}</a>`
     : "—";
+  const editable = canEdit(p.tree_id);
+  $("#editBtn").hidden = $("#delBtn").hidden = !editable;
   showLinks(p);
 }
 
@@ -381,8 +445,8 @@ function showLinks(p) {
   box.hidden = !p.linked_to?.length;
   box.innerHTML = (p.linked_to || []).map(l => `<div class="item">
       <span>🔗 Same person in <b>${esc(l.tree_name)}</b></span>
-      <button type="button" class="secondary" data-open="${l.tree_id}:${l.person_id}">Open</button>
-      ${l.link_id ? `<button type="button" class="danger" data-unlink="${l.link_id}">Unlink</button>` : ""}
+      ${state.trees.some(t => t.id === l.tree_id) ? `<button type="button" class="secondary" data-open="${l.tree_id}:${l.person_id}">Open</button>` : ""}
+      ${l.link_id && (canEdit(p.tree_id) || canEdit(l.tree_id)) ? `<button type="button" class="danger" data-unlink="${l.link_id}">Unlink</button>` : ""}
     </div>`).join("");
   box.querySelectorAll("[data-open]").forEach(b => b.onclick = async () => {
     const [tid, pid] = b.dataset.open.split(":").map(Number);
@@ -396,8 +460,8 @@ function showLinks(p) {
   });
   // link form: other trees, same-gender people
   const f = $("#linkForm"), mine = new Set([p.tree_id, ...(p.linked_to || []).map(l => l.tree_id)]);
-  const others = state.trees.filter(t => !mine.has(t.id));
-  $("#linkBox").hidden = !others.length;
+  const others = state.trees.filter(t => !mine.has(t.id) && t.role !== "viewer");
+  $("#linkBox").hidden = !others.length || !canEdit(p.tree_id);
   $("#linkErr").textContent = "";
   f.elements.tree.innerHTML = `<option value="">— pick a tree —</option>` +
     others.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
@@ -487,6 +551,92 @@ $("#addForm").onsubmit = async e => {
     await loadTree(state.tree.id);
     await refreshTrees();
   } catch (err) { $("#err").textContent = err.message; }
+};
+
+// ---------- account + members
+$("#logoutBtn").onclick = async () => {
+  await api("/api/auth/logout", { method: "POST", headers: JSON_HEADERS, body: "{}" });
+  location.href = "/login";
+};
+
+$("#membersBtn").onclick = () => openMembers();
+$("#mClose").onclick = () => $("#membersDlg").close();
+
+async function openMembers() {
+  $("#mErr").textContent = "";
+  const t = state.tree, m = await api(`/api/trees/${t.id}/members`);
+  const owner = m.my_role === "owner";
+  $("#mTitle").textContent = `${t.name} · you are ${m.my_role}`;
+  $("#mRename").hidden = !owner;
+  $("#renameForm").elements.name.value = t.name;
+  $("#mInvites").hidden = !owner;
+  $("#delTreeBtn").hidden = !owner;
+  $("#mList").innerHTML = m.members.map(x => `<div class="mrow">
+      <div class="grow"><b>${esc(x.name)}</b>${x.is_me ? " (you)" : ""}${x.email ? `<small>${esc(x.email)}</small>` : ""}</div>
+      ${owner ? `<select data-role="${x.user_id}" aria-label="Role for ${esc(x.name)}">
+          ${["owner", "editor", "viewer"].map(r => `<option ${r === x.role ? "selected" : ""}>${r}</option>`).join("")}</select>`
+        : `<span class="pill">${x.role}</span>`}
+      ${owner && !x.is_me ? `<button type="button" class="danger" data-remove="${x.user_id}">Remove</button>` : ""}
+    </div>`).join("");
+  $("#mList").querySelectorAll("[data-role]").forEach(sel => sel.onchange = () =>
+    memberAction(`/api/trees/${t.id}/members/${sel.dataset.role}`, "PUT", { role: sel.value }));
+  $("#mList").querySelectorAll("[data-remove]").forEach(b => b.onclick = () => {
+    if (confirm("Remove this person's access to the tree?"))
+      memberAction(`/api/trees/${t.id}/members/${b.dataset.remove}`, "DELETE");
+  });
+  showInvites(m.invites || []);
+  if (!$("#membersDlg").open) $("#membersDlg").showModal();
+}
+
+async function memberAction(url, method, body) {
+  try {
+    await api(url, { method, headers: JSON_HEADERS, body: body ? JSON.stringify(body) : undefined });
+  } catch (err) { $("#mErr").textContent = err.message; }
+  await openMembers();
+}
+
+function showInvites(invites) {
+  $("#invList").innerHTML = invites.map(i => {
+    const url = location.origin + i.url;
+    const msg = encodeURIComponent(`Join our family tree "${state.tree.name}" on Uravu: ${url}`);
+    return `<div class="mrow"><div class="grow"><span class="pill">${i.role}</span>
+        <div class="invite-url">${esc(url)}</div><small>Expires ${i.expires_at.slice(0, 10)}</small></div>
+      <button type="button" class="secondary" data-copy="${esc(url)}">Copy</button>
+      <a href="https://wa.me/?text=${msg}" target="_blank" rel="noopener"><button type="button" class="secondary">WhatsApp</button></a>
+      <button type="button" class="danger" data-revoke="${i.id}">Revoke</button></div>`;
+  }).join("");
+  $("#invList").querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; }
+    catch { prompt("Copy this link:", b.dataset.copy); }
+  });
+  $("#invList").querySelectorAll("[data-revoke]").forEach(b => b.onclick = () =>
+    memberAction(`/api/trees/${state.tree.id}/invites/${b.dataset.revoke}`, "DELETE"));
+}
+
+$("#invBtn").onclick = () =>
+  memberAction(`/api/trees/${state.tree.id}/invites`, "POST", { role: $("#invRole").value });
+
+$("#renameForm").onsubmit = async e => {
+  e.preventDefault();
+  await memberAction(`/api/trees/${state.tree.id}`, "PUT", { name: e.target.elements.name.value });
+  await refreshTrees(); await loadTree(state.tree.id); await openMembers();
+};
+
+$("#leaveBtn").onclick = async () => {
+  if (!confirm("Leave this tree? You'll need a new invite to come back.")) return;
+  try {
+    await api(`/api/trees/${state.tree.id}/members/${state.me.id}`, { method: "DELETE" });
+    location.href = "/";
+  } catch (err) { $("#mErr").textContent = err.message; }
+};
+
+$("#delTreeBtn").onclick = async () => {
+  const name = state.tree.name;
+  if (prompt(`This deletes "${name}" and everyone in it, for all members. Type the tree name to confirm:`) !== name) return;
+  try {
+    await api(`/api/trees/${state.tree.id}`, { method: "DELETE" });
+    location.href = "/";
+  } catch (err) { $("#mErr").textContent = err.message; }
 };
 
 init();

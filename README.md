@@ -29,6 +29,24 @@ Tick **Include linked families** to see both trees together. Linked cards merge
 into one, so terms work across families: Priya's son → her brother = **Maama**.
 Code: `family_view.py` merges linked cards before the kinship engine runs.
 
+### Accounts and sharing
+Everyone signs up with name, email and password (stored hashed). You only see
+trees you're a member of. Roles per tree:
+
+| Role | Can |
+|---|---|
+| owner | everything + members, invite links, rename, delete tree |
+| editor | add / edit / delete people, link trees |
+| viewer | look only |
+
+Owners create **invite links** (👥 Members → Create invite link) for editors or
+viewers. Links last 7 days and can be revoked. Linking two trees needs editor
+access on both, and lets members of either tree see the other in the
+"Include linked families" view.
+
+Trees with no owner (made before logins, or by the seed commands) are given to
+the account with `OWNER_EMAIL`, or to the first account if that isn't set.
+
 Add a language = add rows to `terms_seed.py` (no code changes).
 Tamil terms vary by region and family — review and adjust.
 
@@ -41,7 +59,7 @@ flask --app app init-db       # tables + kinship terms (uses SQLite locally)
 flask --app app seed-demo     # sample 3-generation family
 flask --app app seed-linked-demo  # second family, linked through Priya
 flask --app app run           # http://127.0.0.1:5000
-pytest -q                     # 31 tests
+pytest -q                     # 42 tests
 ```
 
 ## Deploy: Neon + Render
@@ -51,9 +69,8 @@ pytest -q                     # 31 tests
 2. **GitHub**: push this folder to a new repo.
 3. **Render**: New → Blueprint → pick the repo (uses `render.yaml`).
    Paste the Neon string as `DATABASE_URL` when asked.
-4. **Family password (recommended):** in Render → Environment add `APP_PASSWORD`.
-   The site then asks for a login: username `family`, that password.
-   Without it, anyone with the link can see phone numbers and addresses.
+4. **Accounts:** Render generates `SECRET_KEY`. Set `OWNER_EMAIL` to your email,
+   then sign up with that email so the existing trees become yours.
 5. The build runs `init-db`, which also adds new columns to existing tables.
 6. Demo data (Render's free plan has no Shell, so run it on your machine):
    `export DATABASE_URL='<neon string>' && flask --app app seed-demo && flask --app app seed-linked-demo`
@@ -72,9 +89,17 @@ pytest -q                     # 31 tests
 | GET | `/api/trees/<id>?linked=1` | tree plus every linked family, linked cards merged |
 | POST | `/api/trees` | new tree: `name` |
 | POST / DELETE | `/api/links`, `/api/links/<id>` | link two cards as the same person (`person_a`, `person_b`) / unlink |
+| POST | `/api/auth/signup`, `/login`, `/logout`, `/password` | accounts |
+| GET / PUT / DELETE | `/api/trees/<id>/members[/<user_id>]` | list, change role, remove / leave |
+| POST / DELETE | `/api/trees/<id>/invites[/<id>]` | create / revoke invite link |
+| POST | `/api/invites/<token>/accept` | join a tree |
+| PUT / DELETE | `/api/trees/<id>` | rename / delete tree (owner) |
+
+All API calls need a login; writes must be JSON (blocks cross-site form posts).
 
 ## Next ideas
-- Share link + link requests with approval (needs logins)
+- Link requests with approval (other family's owner says yes)
+- Password reset by email, Google sign-in
 - Suggest duplicates: same name + birth year in two trees
 - Hindi, Telugu, Malayalam terms
 - Drag to pan on mobile

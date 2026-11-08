@@ -1,9 +1,7 @@
 import os
 import sys
 
-import tempfile
-os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "test.db")
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+# test database is set up in conftest.py
 
 import pytest  # noqa: E402
 from app import app, init_db, seed_demo  # noqa: E402
@@ -15,7 +13,12 @@ def client():
     runner = app.test_cli_runner()
     assert "kinship terms loaded" in runner.invoke(init_db).output
     assert "Demo tree created" in runner.invoke(seed_demo).output
-    return app.test_client()
+    c = app.test_client()
+    # first account becomes owner of trees made before logins existed
+    r = c.post("/api/auth/signup", json={"name": "Jeeva", "email": "owner@example.com",
+                                         "password": "correct horse"})
+    assert r.status_code == 201
+    return c
 
 
 def pid(name):
@@ -106,14 +109,6 @@ def test_rejects_bad_input(client):
     assert client.put(f"/api/people/{pid_}", json={"full_name": "  "}).status_code == 400
 
 
-def test_family_password(client, monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "secret")
-    assert client.get("/api/trees").status_code == 401
-    assert client.get("/healthz").status_code == 200
-    ok = "Basic " + base64.b64encode(b"family:secret").decode()
-    assert client.get("/api/trees", headers={"Authorization": ok}).status_code == 200
-
-
 def test_migration_adds_columns_to_old_table(tmp_path):
     """Neon already has the old persons table: init-db must add the new columns."""
     import sqlalchemy as sa
@@ -147,6 +142,7 @@ def pid_in(name, tree):
 def linked(client):
     out = app.test_cli_runner().invoke(seed_linked_demo).output
     assert "linked through Priya" in out
+    client.get("/api/trees")          # owner picks up the newly seeded tree
     return client
 
 

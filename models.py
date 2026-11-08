@@ -1,7 +1,7 @@
 import os
 from sqlalchemy import (create_engine, Column, Integer, String, Date, Text,
                         ForeignKey, CheckConstraint, LargeBinary, DateTime,
-                        inspect, text)
+                        UniqueConstraint, inspect, text)
 from sqlalchemy.orm import declarative_base, sessionmaker, deferred
 
 
@@ -73,6 +73,39 @@ class PersonLink(Base):
     person_b = Column(Integer, ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
     status = Column(String(10), nullable=False, default="approved")  # 'pending' later, with logins
     __table_args__ = (CheckConstraint("person_a <> person_b"),)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(80), nullable=False)
+    email = Column(String(254), nullable=False, unique=True)   # stored lower-case
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, nullable=False)
+
+    def to_dict(self):
+        return {"id": self.id, "name": self.name, "email": self.email}
+
+
+class TreeMember(Base):
+    __tablename__ = "tree_members"
+    id = Column(Integer, primary_key=True)
+    tree_id = Column(Integer, ForeignKey("trees.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(10), nullable=False)   # owner / editor / viewer
+    __table_args__ = (UniqueConstraint("tree_id", "user_id"),
+                      CheckConstraint("role IN ('owner','editor','viewer')"))
+
+
+class Invite(Base):
+    __tablename__ = "invites"
+    id = Column(Integer, primary_key=True)
+    token = Column(String(64), nullable=False, unique=True)
+    tree_id = Column(Integer, ForeignKey("trees.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(10), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    expires_at = Column(DateTime, nullable=False)
+    __table_args__ = (CheckConstraint("role IN ('editor','viewer')"),)
 
 
 class KinshipTerm(Base):

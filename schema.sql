@@ -18,6 +18,30 @@ CREATE TABLE trees (
 	PRIMARY KEY (id)
 );
 
+CREATE TABLE users (
+	id SERIAL NOT NULL, 
+	name VARCHAR(80) NOT NULL, 
+	email VARCHAR(254) NOT NULL, 
+	password_hash VARCHAR(255) NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (email)
+);
+
+CREATE TABLE invites (
+	id SERIAL NOT NULL, 
+	token VARCHAR(64) NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	role VARCHAR(10) NOT NULL, 
+	created_by INTEGER, 
+	expires_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CHECK (role IN ('editor','viewer')), 
+	UNIQUE (token), 
+	FOREIGN KEY(tree_id) REFERENCES trees (id) ON DELETE CASCADE, 
+	FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
 CREATE TABLE persons (
 	id SERIAL NOT NULL, 
 	tree_id INTEGER NOT NULL, 
@@ -34,6 +58,18 @@ CREATE TABLE persons (
 	PRIMARY KEY (id), 
 	CHECK (gender IN ('M','F')), 
 	FOREIGN KEY(tree_id) REFERENCES trees (id) ON DELETE CASCADE
+);
+
+CREATE TABLE tree_members (
+	id SERIAL NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	role VARCHAR(10) NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (tree_id, user_id), 
+	CHECK (role IN ('owner','editor','viewer')), 
+	FOREIGN KEY(tree_id) REFERENCES trees (id) ON DELETE CASCADE, 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
 CREATE TABLE person_links (
@@ -61,3 +97,4 @@ CREATE TABLE relationships (
 CREATE INDEX ix_rel_person ON relationships(person_id);
 CREATE INDEX ix_rel_related ON relationships(related_id);
 CREATE INDEX ix_terms_lookup ON kinship_terms(language, path_code);
+CREATE INDEX ix_members_user ON tree_members(user_id);
