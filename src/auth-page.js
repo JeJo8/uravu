@@ -29,11 +29,17 @@ function googleButton(label) {
   a.addEventListener("click", async e => {
     e.preventDefault();
     a.setAttribute("aria-disabled", "true");
-    const client = await getClient();
-    const res = await client.auth.signIn.social({ provider: "google", callbackURL: location.origin + next });
-    if (res?.error) {
+    a.parentElement.querySelector(".notice")?.remove();
+    let error;
+    try {
+      const client = await getClient();
+      error = (await client.auth.signIn.social({ provider: "google", callbackURL: location.origin + next }))?.error;
+    } catch (ex) {
+      error = ex;   // the SDK throws for some HTTP errors instead of returning them
+    }
+    if (error) {
       a.removeAttribute("aria-disabled");
-      a.after(h("div", { class: "notice" }, friendlyError(res.error, "Google sign-in didn't work. Please try again.")));
+      a.after(h("div", { class: "notice" }, authError(error)));
     }
   });
   return a;
@@ -57,14 +63,31 @@ function form(fields, buttonLabel, submit) {
   return f;
 }
 
+/** Neon Auth error -> message. "Invalid callbackURL" means this site isn't a trusted domain yet. */
+function authError(err) {
+  const m = `${err?.message || ""} ${err?.code || ""} ${err?.body?.error || ""}`;
+  if (/callback|origin|INVALID_CALLBACKURL|403/i.test(m)) {
+    return `Sign-in isn't set up for ${location.origin} yet. In Neon: Settings → Better Auth → add it as a trusted domain.`;
+  }
+  return friendlyError(err, "Google sign-in didn't work. Please try again.");
+}
+
 const field = (label, attrs) => h("label", {}, label, h("input", attrs));
 const linkTo = (p, text) => h("a", { href: `${p}?next=${encodeURIComponent(next)}` }, text);
 
 async function emailAuth(kind, values) {
   const client = await getClient();
-  const res = kind === "login"
-    ? await client.auth.signIn.email({ email: values.email.trim(), password: values.password })
-    : await client.auth.signUp.email({ email: values.email.trim(), password: values.password, name: values.name.trim() });
+  let res;
+  try {
+    res = kind === "login"
+      ? await client.auth.signIn.email({ email: values.email.trim(), password: values.password })
+      : await client.auth.signUp.email({ email: values.email.trim(), password: values.password, name: values.name.trim() });
+  } catch (ex) {
+    res = { error: ex };   // the SDK throws for some HTTP errors instead of returning them
+  }
+  if (res?.error && /callback|origin|403/i.test(`${res.error.message} ${res.error.code}`)) {
+    throw new Error(authError(res.error));
+  }
   if (res?.error) {
     const m = res.error.message || "";
     throw new Error(/invalid|incorrect|credential/i.test(m) ? "Wrong email or password"
