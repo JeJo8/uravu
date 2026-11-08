@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uravu — Family Tree</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;600&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f3ee; --panel: #fffdf9; --ink: #2b2620; --muted: #7a7166;
+    --line: #c9bfb2; --accent: #b4532a; --accent-soft: #f4e3d9;
+    --male: #dfe9f3; --female: #f6e1e6; --card-border: #e2d9cd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1a17; --panel: #262320; --ink: #f1ebe3; --muted: #a59b8f;
+      --line: #5a5249; --accent: #e08356; --accent-soft: #3d2a20;
+      --male: #26313b; --female: #3a2a2f; --card-border: #3d3832;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Inter, "Noto Sans Tamil", system-ui, sans-serif;
+         background: var(--bg); color: var(--ink); }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+           justify-content: space-between; padding: 14px 20px;
+           border-bottom: 1px solid var(--card-border); background: var(--panel); }
+  h1 { margin: 0; font-size: 20px; }
+  h1 span { color: var(--accent); font-family: "Noto Sans Tamil"; margin-left: 6px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input, button { font: inherit; font-size: 14px; padding: 7px 10px;
+    border-radius: 8px; border: 1px solid var(--card-border);
+    background: var(--panel); color: var(--ink); }
+  button { background: var(--accent); color: #fff; border: none; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--card-border); }
+  main { display: grid; grid-template-columns: 1fr 300px; height: calc(100vh - 62px); }
+  #canvas { overflow: auto; position: relative; }
+  aside { border-left: 1px solid var(--card-border); background: var(--panel);
+          padding: 16px; overflow: auto; }
+  aside h2 { font-size: 15px; margin: 0 0 8px; }
+  .hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .card { cursor: pointer; }
+  .card rect.box { stroke: var(--card-border); stroke-width: 1.5; }
+  .card.M rect.box { fill: var(--male); }
+  .card.F rect.box { fill: var(--female); }
+  .card.selected rect.box { stroke: var(--accent); stroke-width: 3; }
+  .card text { fill: var(--ink); }
+  .card .name { font-weight: 600; font-size: 14px; }
+  .card .year { font-size: 11px; fill: var(--muted); }
+  .card .term { font-weight: 700; font-size: 14px; fill: var(--accent); }
+  .card .native { font-size: 12px; fill: var(--accent); font-family: "Noto Sans Tamil"; }
+  .card .back { font-size: 10.5px; fill: var(--muted); }
+  path.link { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  line.spouse { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; }
+  form { display: grid; gap: 8px; margin-top: 10px; }
+  .pair { background: var(--accent-soft); border-radius: 10px; padding: 10px;
+          margin-top: 12px; font-size: 13px; line-height: 1.6; }
+  .err { color: #c0392b; font-size: 13px; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; height: auto; }
+    aside { border-left: none; border-top: 1px solid var(--card-border); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Uravu <span>உறவு</span></h1>
+  <div class="controls">
+    <select id="treeSel"></select>
+    <select id="langSel"></select>
+  </div>
+</header>
+<main>
+  <div id="canvas"><svg id="svg"></svg></div>
+  <aside>
+    <h2 id="selTitle">Pick a person</h2>
+    <p class="hint" id="selHint">Click anyone in the tree. Every card then shows what
+      <b>they</b> call that relative, and what the relative calls them back.</p>
+
+    <h2 style="margin-top:22px">Add a relative</h2>
+    <form id="addForm">
+      <input name="full_name" placeholder="Name" required>
+      <input name="native_name" placeholder="Name in native script (optional)">
+      <select name="gender"><option value="M">Male</option><option value="F">Female</option></select>
+      <input name="birth_date" type="date" title="Birth date (needed for elder/younger terms)">
+      <select name="relation">
+        <option value="">— relation to selected person —</option>
+        <option>father</option><option>mother</option>
+        <option>husband</option><option>wife</option>
+        <option>son</option><option>daughter</option>
+        <option>brother</option><option>sister</option>
+      </select>
+      <button>Add</button>
+      <div class="err" id="err"></div>
+    </form>
+  </aside>
+</main>
+
+<script>
+const CARD_W = 150, CARD_H = 92, GAP_X = 24, GAP_Y = 80, PAD = 30;
+let state = { tree: null, selected: null, lang: "ta", kin: {} };
+
+const $ = s => document.querySelector(s);
+const api = (url, opts) => fetch(url, opts).then(async r => {
+  const body = r.status === 204 ? null : await r.json();
+  if (!r.ok) throw new Error(body?.error || r.statusText);
+  return body;
+});
+
+async function init() {
+  const langs = await api("/api/languages");
+  $("#langSel").innerHTML = Object.entries(langs)
+    .map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+  $("#langSel").value = state.lang;
+  const trees = await api("/api/trees");
+  $("#treeSel").innerHTML = trees.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+  if (trees.length) await loadTree(trees[0].id);
+  $("#treeSel").onchange = e => loadTree(e.target.value);
+  $("#langSel").onchange = e => { state.lang = e.target.value; select(state.selected); };
+}
+
+async function loadTree(id) {
+  state.tree = await api(`/api/trees/${id}`);
+  state.kin = {};
+  draw();
+  if (state.selected && byId(state.selected)) select(state.selected);
+}
+
+const byId = id => state.tree.people.find(p => p.id === +id);
+
+// ---------- layout: generations from parent/child links, couples side by side
+function layout(people, rels) {
+  const parentsOf = {}, kidsOf = {}, spousesOf = {};
+  people.forEach(p => { parentsOf[p.id] = []; kidsOf[p.id] = []; spousesOf[p.id] = []; });
+  rels.forEach(r => {
+    if (r.type === "parent") { parentsOf[r.related_id].push(r.person_id); kidsOf[r.person_id].push(r.related_id); }
+    else { spousesOf[r.person_id].push(r.related_id); spousesOf[r.related_id].push(r.person_id); }
+  });
+  const gen = {};
+  for (const p of people) {
+    if (gen[p.id] !== undefined) continue;
+    gen[p.id] = 0; const q = [p.id];
+    while (q.length) {
+      const n = q.shift();
+      const push = (m, g) => { if (gen[m] === undefined) { gen[m] = g; q.push(m); } };
+      parentsOf[n].forEach(m => push(m, gen[n] - 1));
+      kidsOf[n].forEach(m => push(m, gen[n] + 1));
+      spousesOf[n].forEach(m => push(m, gen[n]));
+    }
+  }
+  const levels = [...new Set(Object.values(gen))].sort((a, b) => a - b);
+  const pos = {}, order = {};
+  let maxCols = 0;
+  levels.forEach((lv, row) => {
+    const rowPeople = people.filter(p => gen[p.id] === lv);
+    const key = id => {
+      const ps = parentsOf[id].filter(x => order[x] !== undefined);
+      return ps.length ? ps.reduce((s, x) => s + order[x], 0) / ps.length : null;
+    };
+    // build couple units
+    const placed = new Set(), units = [];
+    const birth = id => byIdIn(people, id).birth_date || "";
+    rowPeople.slice().sort((a, b) => (birth(a.id) > birth(b.id) ? 1 : -1)).forEach(p => {
+      if (placed.has(p.id)) return;
+      const unit = [p.id, ...spousesOf[p.id].filter(s => gen[s] === lv && !placed.has(s))];
+      unit.forEach(u => placed.add(u));
+      const keys = unit.map(key).filter(k => k !== null);
+      units.push({ unit, k: keys.length ? Math.min(...keys) : 1e9 + units.length });
+    });
+    units.sort((a, b) => a.k - b.k);
+    // inside a couple, put the blood-linked person nearest to their parents
+    const flat = units.flatMap(u => u.unit.sort((a, b) =>
+      ((key(a) ?? 1e9) - (key(b) ?? 1e9)) || (byIdIn(people, a).gender === "M" ? -1 : 1)));
+    flat.forEach((id, i) => { order[id] = i; pos[id] = { x: i, row }; });
+    maxCols = Math.max(maxCols, flat.length);
+  });
+  // centre each row
+  levels.forEach((lv, row) => {
+    const ids = Object.keys(pos).filter(id => pos[id].row === row);
+    const off = (maxCols - ids.length) / 2;
+    ids.forEach(id => {
+      pos[id].px = PAD + (pos[id].x + off) * (CARD_W + GAP_X);
+      pos[id].py = PAD + row * (CARD_H + GAP_Y);
+    });
+  });
+  return { pos, parentsOf, maxCols, rows: levels.length };
+}
+const byIdIn = (people, id) => people.find(p => p.id === +id);
+
+function draw() {
+  const { people, relationships } = state.tree;
+  const svg = $("#svg");
+  const L = layout(people, relationships);
+  const W = PAD * 2 + L.maxCols * (CARD_W + GAP_X), H = PAD * 2 + L.rows * (CARD_H + GAP_Y);
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  let out = "";
+  // parent → child links (from couple midpoint); each family gets its own bus height
+  const families = {};
+  people.forEach(c => {
+    const ps = L.parentsOf[c.id]; if (!ps.length) return;
+    const fam = ps.slice().sort().join("-");
+    if (!(fam in families)) families[fam] = Object.keys(families).length;
+    const mx = ps.reduce((s, p) => s + L.pos[p].px, 0) / ps.length + CARD_W / 2;
+    const my = L.pos[ps[0]].py + CARD_H;
+    const cx = L.pos[c.id].px + CARD_W / 2, cy = L.pos[c.id].py;
+    const midY = my + 18 + (families[fam] % 4) * 12;
+    out += `<path class="link" d="M${mx},${my} V${midY} H${cx} V${cy}"/>`;
+  });
+  relationships.filter(r => r.type === "spouse").forEach(r => {
+    const a = L.pos[r.person_id], b = L.pos[r.related_id];
+    const [l, rr] = a.px < b.px ? [a, b] : [b, a];
+    out += `<line class="spouse" x1="${l.px + CARD_W}" y1="${l.py + CARD_H / 2}" x2="${rr.px}" y2="${rr.py + CARD_H / 2}"/>`;
+  });
+  people.forEach(p => {
+    const { px, py } = L.pos[p.id];
+    const k = state.kin[p.id];
+    const sel = state.selected === p.id;
+    let termText = "";
+    if (sel) termText = `<text class="term" x="${CARD_W/2}" y="64" text-anchor="middle">Selected</text>`;
+    else if (k?.a_calls_b) {
+      const a = k.a_calls_b, b = k.b_calls_a;
+      const main = a.term || a.description;
+      termText = `<text class="term" x="${CARD_W/2}" y="58" text-anchor="middle">${esc(trim(main, 20))}</text>`;
+      if (a.term_native && a.term_native !== a.term)
+        termText += `<text class="native" x="${CARD_W/2}" y="73" text-anchor="middle">${esc(a.term_native)}</text>`;
+      if (b) termText += `<text class="back" x="${CARD_W/2}" y="86" text-anchor="middle">calls back: ${esc(trim(b.term || b.description, 18))}</text>`;
+    }
+    const year = p.birth_date ? p.birth_date.slice(0, 4) : "";
+    out += `<g class="card ${p.gender}${sel ? " selected" : ""}" data-id="${p.id}" transform="translate(${px},${py})">
+      <title>${esc(k?.a_calls_b?.description || p.full_name)}</title>
+      <rect class="box" width="${CARD_W}" height="${CARD_H}" rx="12"/>
+      <text class="name" x="${CARD_W/2}" y="22" text-anchor="middle">${esc(trim(p.full_name, 18))}</text>
+      <text class="year" x="${CARD_W/2}" y="37" text-anchor="middle">${year}</text>
+      ${termText}</g>`;
+  });
+  svg.innerHTML = out;
+  svg.querySelectorAll(".card").forEach(g => g.onclick = () => select(+g.dataset.id));
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const trim = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+async function select(id) {
+  if (!id) return;
+  state.selected = id;
+  const p = byId(id);
+  $("#selTitle").textContent = p.full_name + (p.native_name ? ` (${p.native_name})` : "");
+  $("#selHint").textContent = "Cards show what " + p.full_name +
+    " calls each relative. Hover a card for the full relationship.";
+  state.kin = await api(`/api/trees/${state.tree.id}/kinship/${id}?lang=${state.lang}`);
+  draw();
+}
+
+$("#addForm").onsubmit = async e => {
+  e.preventDefault();
+  $("#err").textContent = "";
+  const f = Object.fromEntries(new FormData(e.target));
+  if (f.relation && !state.selected) { $("#err").textContent = "Select a person in the tree first."; return; }
+  try {
+    await api("/api/people", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...f, tree_id: state.tree.id, relative_id: state.selected,
+                             birth_date: f.birth_date || null, relation: f.relation || null }) });
+    e.target.reset();
+    await loadTree(state.tree.id);
+  } catch (err) { $("#err").textContent = err.message; }
+};
+
+init();
+</script>
+</body>
+</html>
