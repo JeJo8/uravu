@@ -27,7 +27,7 @@ a host that forwards without adding `X-Forwarded-Host`. Render's rewrites add it
 | File | What it does |
 |---|---|
 | `src/kinship.js` | Finds how two people are related (`F.eB` = father's elder brother) and looks up the term |
-| `src/terms.js` | Tamil + English terms. Add a language = add rows |
+| `src/terms.js` | Tamil + English terms, Tamil checked against the [University of Madras Tamil Lexicon](https://dsal.uchicago.edu/dictionaries/tamil-lex/). Add a language = add rows |
 | `src/view.js` | Merges "same person" cards when linked families are shown |
 | `src/api.js` | Answers the page's `/api/...` calls using the Data API |
 | `src/app.js`, `index.html` | The tree page |

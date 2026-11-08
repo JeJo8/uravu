@@ -7,7 +7,10 @@
  *   path_code:      see kinship.js, e.g. F.eB = father's elder brother.
  *                   Codes without e/y (F.B) are used when no age-specific row matches.
  *
- * Tamil terms: please review, usage varies by region and family.
+ * Tamil terms are checked against the University of Madras Tamil Lexicon
+ * (https://dsal.uchicago.edu/dictionaries/tamil-lex/). Everyday spellings such as
+ * சித்தப்பா / சித்தி are used where the Lexicon lists the formal form
+ * (சிற்றப்பன் / சின்னம்மா). Usage still varies by region and family.
  */
 export const LANGUAGES = {"ta": "Tamil", "en": "English"};
 
@@ -52,14 +55,18 @@ const ROWS = [
   ["ta", "M.Z.D", "any", "elder", "Akka", "அக்கா"],
   ["ta", "F.B.D", "any", "younger", "Thangai", "தங்கை"],
   ["ta", "M.Z.D", "any", "younger", "Thangai", "தங்கை"],
+  // cross cousins (Lexicon: மச்சான், மைத்துனன் = son of maternal uncle or paternal aunt;
+  // அத்தான் = father's sister's son, or maternal uncle's son when elder)
   ["ta", "F.Z.S", "M", "any", "Machan", "மச்சான்"],
   ["ta", "M.B.S", "M", "any", "Machan", "மச்சான்"],
   ["ta", "F.Z.S", "F", "any", "Athan", "அத்தான்"],
-  ["ta", "M.B.S", "F", "any", "Athan", "அத்தான்"],
-  ["ta", "F.Z.D", "M", "any", "Machini", "மச்சினி"],
-  ["ta", "M.B.D", "M", "any", "Machini", "மச்சினி"],
-  ["ta", "F.Z.D", "F", "elder", "Anni", "அண்ணி"],
-  ["ta", "M.B.D", "F", "elder", "Anni", "அண்ணி"],
+  ["ta", "M.B.S", "F", "elder", "Athan", "அத்தான்"],
+  ["ta", "M.B.S", "F", "younger", "Machan", "மச்சான்"],
+  // (Lexicon: மைத்துனி / மச்சினி = daughter of maternal uncle or paternal aunt;
+  //  மதினி = maternal uncle's daughter older than oneself)
+  ["ta", "F.Z.D", "any", "any", "Machini", "மச்சினி"],
+  ["ta", "M.B.D", "any", "any", "Machini", "மச்சினி"],
+  ["ta", "M.B.D", "any", "elder", "Madhini", "மதினி"],
   ["ta", "B.S", "M", "any", "Magan", "மகன்"],
   ["ta", "B.D", "M", "any", "Magal", "மகள்"],
   ["ta", "Z.S", "F", "any", "Magan", "மகன்"],
@@ -84,6 +91,12 @@ const ROWS = [
   ["ta", "eZ.H", "any", "any", "Athan", "அத்தான்"],
   ["ta", "yZ.H", "any", "any", "Machan", "மச்சான்"],
   ["ta", "W.B", "any", "any", "Machan", "மச்சான்"],
+  ["ta", "W.eB", "any", "any", "Athan", "அத்தான்"],          // Lexicon: wife's brother, when elder
+  ["ta", "W.eZ", "any", "any", "Madhini", "மதினி"],         // Lexicon: wife's sister
+  ["ta", "W.Z.H", "any", "any", "Sagalai", "சகலை"],         // Lexicon: wife's sister's husband
+  ["ta", "H.B", "any", "any", "Maithunan", "மைத்துனன்"],    // Lexicon: husband's brother
+  ["ta", "H.B.W", "any", "any", "Oragathi", "ஓரகத்தி"],     // Lexicon: husband's brother's wife
+  ["ta", "yB.W", "any", "any", "Kozhundhi", "கொழுந்தி"],    // Lexicon: brother's wife
   ["ta", "W.yZ", "any", "any", "Kozhundhiyal", "கொழுந்தியாள்"],
   ["ta", "H.yB", "any", "any", "Kozhundhan", "கொழுந்தன்"],
   ["ta", "H.Z", "any", "any", "Naathanaar", "நாத்தனார்"],
