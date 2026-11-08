@@ -179,6 +179,72 @@ async function deletePerson(id) {
   return null;
 }
 
+// ---------------------------------------------------------------- connect existing people
+const parentsOf = (data, id) => data.relationships.filter(r => r.type === "parent" && r.related_id === id).map(r => r.person_id);
+const childrenOf = (data, id) => data.relationships.filter(r => r.type === "parent" && r.person_id === id).map(r => r.related_id);
+const spousesOf = (data, id) => data.relationships.filter(r => r.type === "spouse" && (r.person_id === id || r.related_id === id))
+  .map(r => (r.person_id === id ? r.related_id : r.person_id));
+
+/** Checks one new link and returns the row to insert. "other is <relation> of person". */
+function connectionRow(data, personId, otherId, relation) {
+  const person = data.persons.find(p => p.id === personId);
+  const other = data.persons.find(p => p.id === otherId);
+  if (!person || !other) fail("Pick someone in this tree");
+  if (personId === otherId) fail("Pick someone else");
+  const female = ["wife", "mother", "daughter"].includes(relation);
+  if ((other.gender === "F") !== female) fail(`${other.full_name} is ${other.gender === "F" ? "a woman" : "a man"}, so pick ${{
+    wife: "Husband", husband: "Wife", mother: "Father", father: "Mother", daughter: "Son", son: "Daughter" }[relation]}`);
+  const already = [...parentsOf(data, personId), ...childrenOf(data, personId), ...spousesOf(data, personId)];
+  if (already.includes(otherId)) fail(`${other.full_name} and ${person.full_name} are already connected`);
+
+  if (relation === "wife" || relation === "husband") {
+    return { person_id: personId, related_id: otherId, type: "spouse" };
+  }
+  if (relation === "father" || relation === "mother") {
+    const parents = parentsOf(data, personId).map(id => data.persons.find(p => p.id === id)).filter(Boolean);
+    if (parents.some(p => p.gender === other.gender)) {
+      fail(`${person.full_name} already has a ${relation}`);
+    }
+    return { person_id: otherId, related_id: personId, type: "parent" };
+  }
+  // son / daughter
+  const parents = parentsOf(data, otherId).map(id => data.persons.find(p => p.id === id)).filter(Boolean);
+  if (parents.some(p => p.gender === person.gender)) {
+    fail(`${other.full_name} already has a ${person.gender === "F" ? "mother" : "father"}`);
+  }
+  return { person_id: personId, related_id: otherId, type: "parent" };
+}
+
+async function connect(body) {
+  const db = await getClient();
+  const data = await loadAll();
+  const personId = +body.person_id, otherId = +body.other_id;
+  const rows = [connectionRow(data, personId, otherId, body.relation)];
+
+  // A new couple: children of one who have no parent of the other's gender yet
+  // are suggested as children of both (Sekar's son Arunmozhi -> also Kalaimani's son).
+  let suggestions = [];
+  if (rows[0].type === "spouse") {
+    const name = id => data.persons.find(p => p.id === id);
+    for (const [parent, partner] of [[personId, otherId], [otherId, personId]]) {
+      for (const child of childrenOf(data, parent)) {
+        const ps = parentsOf(data, child).map(name);
+        if (ps.length === 1 && !ps.some(p => p.gender === name(partner).gender)) {
+          suggestions.push({ parent: partner, parent_name: name(partner).full_name,
+                             child, child_name: name(child).full_name });
+        }
+      }
+    }
+  }
+  if (body.dry_run) return { suggestions };   // the page asks before adding these
+  if (body.include_children) {
+    rows.push(...suggestions.map(sg => ({ person_id: sg.parent, related_id: sg.child, type: "parent" })));
+    suggestions = [];
+  }
+  check(await db.from("relationships").insert(rows), "You need editor access to connect these people");
+  return { ok: true, suggestions };
+}
+
 // ---------------------------------------------------------------- members & invites
 async function members(treeId) {
   const db = await getClient();
@@ -268,6 +334,8 @@ const routes = [
   ["POST", /^\/api\/people$/, (m, body) => addPerson(body)],
   ["PUT", /^\/api\/people\/(\d+)$/, (m, body) => editPerson(+m[1], body)],
   ["DELETE", /^\/api\/people\/(\d+)$/, m => deletePerson(+m[1])],
+
+  ["POST", /^\/api\/relationships$/, (m, body) => connect(body)],
 
   ["POST", /^\/api\/links$/, async (m, body) => {
     const db = await getClient();

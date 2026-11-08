@@ -306,10 +306,60 @@ function showDetails(p) {
   $("#dAddress").innerHTML = p.address
     ? `<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address)}">${esc(p.address)}</a>`
     : "—";
+  showConnect(p);
   const editable = canEdit(p.tree_id);
   $("#editBtn").hidden = $("#delBtn").hidden = !editable;
   showLinks(p);
 }
+
+// ---------- connect two people already in the tree (e.g. mark Kalaimani as Sekar's wife)
+const RELATIONS = { F: [["wife", "Wife"], ["mother", "Mother"], ["daughter", "Daughter"]],
+                    M: [["husband", "Husband"], ["father", "Father"], ["son", "Son"]] };
+
+function showConnect(p) {
+  const f = $("#connectForm");
+  const others = state.tree.people.filter(x => x.id !== p.id && canEdit(x.tree_id))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  $("#connectBox").hidden = !canEdit(p.tree_id) || !others.length;
+  $("#connectErr").textContent = "";
+  f.elements.person.innerHTML = `<option value="">Pick a person</option>` + others.map(x =>
+    `<option value="${x.id}">${esc(x.full_name)}${x.birth_date ? " (" + x.birth_date.slice(0, 4) + ")" : ""}</option>`).join("");
+  fillRelations(p, null);
+}
+
+function fillRelations(p, other) {
+  const sel = $("#connectForm").elements.relation;
+  const opts = other ? RELATIONS[other.gender] : [];
+  sel.innerHTML = other
+    ? opts.map(([v, label]) => `<option value="${v}">is ${esc(p.full_name)}'s ${label.toLowerCase()}</option>`).join("")
+    : `<option value="">…is ${esc(p.full_name)}'s</option>`;
+  sel.disabled = !other;
+}
+
+$("#connectForm").elements.person.onchange = e => {
+  fillRelations(byId(state.selected), byId(+e.target.value));
+};
+
+$("#connectForm").onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target, err = $("#connectErr");
+  err.textContent = "";
+  if (!f.elements.person.value || !f.elements.relation.value) return;
+  const body = { person_id: state.selected, other_id: +f.elements.person.value, relation: f.elements.relation.value };
+  const post = extra => api("/api/relationships", { method: "POST", headers: JSON_HEADERS,
+                                                     body: JSON.stringify({ ...body, ...extra }) });
+  try {
+    const { suggestions } = await post({ dry_run: true });
+    let include = false;
+    if (suggestions.length) {
+      const list = suggestions.map(s => `• ${s.parent_name} as ${s.child_name}'s ${byId(s.parent).gender === "F" ? "mother" : "father"}`).join("\n");
+      include = confirm(`Also connect their children?\n\n${list}`);
+    }
+    await post({ include_children: include });
+    $("#connectBox").open = false;
+    await loadTree(state.tree.id);
+  } catch (ex) { err.textContent = ex.message; }
+};
 
 function showLinks(p) {
   const box = $("#linkList");
