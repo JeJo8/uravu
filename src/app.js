@@ -256,8 +256,8 @@ function drawTree() {
       const native = a.term_native && a.term_native !== a.term && main.length + a.term_native.length <= 22
         ? ` <tspan class="native">${esc(a.term_native)}</tspan>` : "";
       termText = `<text class="term" x="14" y="76" data-w="${CARD_W - 26}">${esc(main)}${native}</text>`;
-      const backLabel = state.lang === "ta" ? "அவர் அழைப்பது" : "calls back";
-      if (b) termText += `<text class="back" x="14" y="93" data-w="${CARD_W - 26}">${backLabel}: ${esc(trim(b.term || b.description, state.lang === "ta" ? 12 : 18))}</text>`;
+      // what they call the selected person, shown in its own colour (no label)
+      if (b) termText += `<text class="back" x="14" y="93" data-w="${CARD_W - 26}">${esc(trim(b.term || b.description, state.lang === "ta" ? 16 : 22))}</text>`;
     }
     const year = p.birth_date ? p.birth_date.slice(0, 4) : "";
     const avatar = p.photo_url
@@ -325,7 +325,8 @@ async function select(id) {
   $("#selHint").textContent = state.view === "tree"
     ? `Cards show what ${first} calls each relative.` + (isPhone() ? "" : " Hover a card for the full relationship.")
     : `Everyone is shown as ${first} would call them. Tap someone to see the family from their side.`;
-  $("#viewpointText").innerHTML = `Seeing everyone as <b>${esc(first)}</b> would call them`;
+  $("#viewpointText").innerHTML = `<span class="key a">${state.lang === "ta" ? `${esc(first)} அழைப்பது` : `${esc(first)} calls them`}</span>`
+    + ` · <span class="key b">${state.lang === "ta" ? `அவர்கள் ${esc(first)}-ஐ அழைப்பது` : `they call ${esc(first)}`}</span>`;
   $("#viewpoint").hidden = false;
   $("#addTitle").textContent = `Add a relative of ${first}`;
   $("#sheetDetails").hidden = false; $("#sheetActions").hidden = false;
@@ -782,7 +783,7 @@ function drawList() {
     return `<button type="button" class="lrow" data-id="${p.id}">
       <span class="av ${p.gender}">${av}</span>
       <span class="mid"><span class="t">${esc(termOf(k) || "—")}</span><span class="n">${esc(sub)}</span></span>
-      ${backOf(k) ? `<span class="back"><small>calls ${esc(ego.full_name.split(" ")[0])}</small><b>${esc(backOf(k))}</b></span>` : ""}</button>`;
+      ${backOf(k) ? `<span class="back"><b>${esc(backOf(k))}</b></span>` : ""}</button>`;
   };
   const html = GROUPS.filter(([g]) => rows[g]?.length).map(([g, title]) => {
     const rank = p => RANK[firstStep(state.kin[p.id])] ?? 9;

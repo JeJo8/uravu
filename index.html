@@ -21,7 +21,7 @@
     --line: #c9bfb2; --dot: #ddd3c6; --accent: #a8481f; --accent-hover: #8f3d1a;
     --accent-ink: #7d3414; --accent-soft: #f4e3d9; --field: #fff; --field-border: #d9cfc2;
     --seg: #efe8de; --divider: #efe8de; --hover: #f4ede4;
-    --male: #dfe9f3; --male-ink: #2f4f6e; --female: #f6e1e6; --female-ink: #7a3048;
+    --back: #2f6f6a; --male: #dfe9f3; --male-ink: #2f4f6e; --female: #f6e1e6; --female-ink: #7a3048;
     --card-border: #e2d9cd; --danger: #b3261e;
     --shadow: 0 1px 2px rgb(43 38 32 / .06); --shadow-lg: 0 -6px 24px rgb(43 38 32 / .14);
   }
@@ -31,7 +31,7 @@
       --line: #5a5249; --dot: #34302b; --accent: #e08356; --accent-hover: #ea976f;
       --accent-ink: #f0b392; --accent-soft: #3d2a20; --field: #1f1d1a; --field-border: #4a443d;
       --seg: #1f1d1a; --divider: #34302b; --hover: #2f2b27;
-      --male: #26313b; --male-ink: #b9d0e6; --female: #3a2a2f; --female-ink: #ecbccb;
+      --back: #7fc8bf; --male: #26313b; --male-ink: #b9d0e6; --female: #3a2a2f; --female-ink: #ecbccb;
       --card-border: #3d3832; --danger: #f08a80;
       --shadow: 0 1px 2px rgb(0 0 0 / .3); --shadow-lg: 0 -6px 24px rgb(0 0 0 / .45);
     }
@@ -98,6 +98,7 @@
   .viewpoint span { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 14px;
     border-radius: 99px; background: var(--panel); border: 1px solid var(--card-border);
     font-size: 13px; color: var(--ink-2); box-shadow: var(--shadow); }
+  .viewpoint span .key { all: unset; font-weight: 600; } .viewpoint span .key.a { color: var(--accent); } .viewpoint span .key.b { color: var(--back); }
   .zoom { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 2px; padding: 3px;
           border-radius: 12px; background: var(--panel); border: 1px solid var(--card-border);
           box-shadow: 0 2px 8px rgb(43 38 32 / .08); }
@@ -121,7 +122,7 @@
   .card .rule { stroke: var(--divider); }
   .card .term { font-weight: 700; font-size: 15px; fill: var(--accent); }
   .card .native { font-size: 13px; font-weight: 600; fill: var(--accent); font-family: "Noto Sans Tamil"; }
-  .card .back { font-size: 11.5px; fill: var(--muted); }
+  .card .back { font-size: 12px; font-weight: 600; fill: var(--back); }
   .card .badge { stroke: var(--muted); fill: none; stroke-width: 1.8; stroke-linecap: round; }
   path.link { fill: none; stroke: var(--line); stroke-width: 1.5; }
   line.spouse { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; }
@@ -162,7 +163,7 @@
   .lrow .n { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lrow .back { flex: none; max-width: 40%; display: grid; justify-items: end; gap: 1px; text-align: right; }
   .lrow .back small { font-size: 11px; color: var(--muted); }
-  .lrow .back b { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+  .lrow .back b { font-size: 14px; font-weight: 600; color: var(--back); overflow-wrap: anywhere; }
   .list-empty { text-align: center; color: var(--muted); font-size: 14px; margin-top: 32px; }
 
   /* ---------- side panel / bottom sheet */
