@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Uravu — Family Tree</title>
+<meta name="description" content="Family tree that shows what each relative calls the other, in Tamil and English.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#fffdf9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#262320" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Uravu">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -194,14 +204,14 @@
     .brand { font-size: 20px; flex: 1; }
     .brand span { font-size: 16px; }
     .spacer, .who, .label-wide { display: none; }
-    #newTreeBtn, #membersBtn, #logoutBtn { width: 44px; min-height: 44px; padding: 0; border-color: transparent; background: transparent; }
+    #newTreeBtn, #membersBtn, #logoutBtn, #installBtn { width: 44px; min-height: 44px; padding: 0; border-color: transparent; background: transparent; }
     #treeSel { order: 5; flex: 1 1 100%; max-width: none; min-height: 44px; margin-right: 8px; background-color: var(--bg); font-size: 15px; }
     #newTreeBtn { order: 3; }
     .header-tools { display: flex; order: 6; flex: 1 1 100%; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-right: -8px; padding-right: 8px; }
     .header-tools::-webkit-scrollbar { display: none; }
     .seg label { min-height: 38px; }
     label.toggle { min-height: 44px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--card-border); font-size: 13px; }
-    #membersBtn { order: 2; } #logoutBtn { order: 4; }
+    #installBtn { order: 1; } #membersBtn { order: 2; } #logoutBtn { order: 4; }
 
     .viewpoint { display: none; }
     .zoom { left: auto; right: 12px; top: 12px; bottom: auto; flex-direction: column; }
@@ -241,6 +251,7 @@
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-tree" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v5M5 16.5v-2a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></symbol>
@@ -263,6 +274,7 @@
     <div class="seg" id="langSel" role="radiogroup" aria-label="Kinship language"></div>
     <label class="toggle"><input type="checkbox" id="linkedToggle"> Linked families</label>
   </div>
+  <button type="button" id="installBtn" aria-label="Install app" hidden><svg class="i"><use href="#i-download"/></svg><span class="label-wide">Install app</span></button>
   <button type="button" id="membersBtn" aria-label="Members"><svg class="i"><use href="#i-users"/></svg><span class="label-wide">Members</span></button>
   <span class="who" id="who"></span>
   <button type="button" class="icon" id="logoutBtn" aria-label="Log out" title="Log out"><svg class="i"><use href="#i-logout"/></svg></button>

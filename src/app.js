@@ -3,6 +3,7 @@
  * which answers the same /api/... calls the old Flask server did.
  */
 import { api } from "./api.js";
+import { setupPwa } from "./pwa.js";
 
 const CARD_W = 168, CARD_H = 104, GAP_X = 28, GAP_Y = 72, PAD = 40;
 let state = { tree: null, selected: null, lang: "ta", kin: {}, linked: false, trees: [], me: null, zoom: 1, dims: null };
@@ -517,3 +518,5 @@ init().catch(err => {
     $("#svg").innerHTML = `<text class="empty" x="30" y="50">${esc(err.message)}</text>`;
   }
 });
+
+setupPwa(document.getElementById("installBtn"));

@@ -46,6 +46,12 @@ Members of a tree can also see families **linked** to it. Linking needs editor
 access on both trees. Invite links are random, last 7 days and can be revoked.
 Trees with no owner go to the Google-verified email set at the end of `db/setup.sql`.
 
+### Installable app (PWA)
+`public/manifest.webmanifest`, the icons in `public/icons/` and `public/sw.js` make
+Uravu installable: Android/Chrome show an **Install app** button in the header; on
+iPhone use Safari's Share → *Add to Home Screen*. The service worker caches only
+the app's own files, never family data.
+
 ## Setup
 
 ### 1. Neon

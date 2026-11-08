@@ -4,6 +4,7 @@
  * Sign-in is handled by Neon Auth; joining calls accept_invite() in the database.
  */
 import { getClient, currentUser, friendlyError } from "./neon.js";
+import { setupPwa } from "./pwa.js";
 
 const view = document.getElementById("view");
 const params = new URLSearchParams(location.search);
@@ -186,3 +187,5 @@ async function main() {
 }
 
 main().catch(e => show(h("div", { class: "notice" }, friendlyError(e))));
+
+setupPwa(null);
