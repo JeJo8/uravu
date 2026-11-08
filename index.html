@@ -127,6 +127,44 @@
   line.spouse { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; }
   .empty { fill: var(--muted); font-size: 15px; }
 
+  /* ---------- view switcher, around-me circles, list */
+  .views { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 5;
+           box-shadow: var(--shadow); border: 1px solid var(--card-border); background: var(--seg); }
+  .stage:has(.views) .viewpoint { top: 64px; }
+  circle.orbit { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 5 6; opacity: .7; }
+  .card.bubble .term { font-size: 13.5px; }
+  .card.bubble .name { font-size: 12px; font-weight: 500; fill: var(--ink-2); }
+  .card.me .avatar-bg { fill: var(--accent); }
+  .card.me .initial { fill: #fff; font-size: 24px; }
+  .card.me .name { font-size: 14px; font-weight: 700; fill: var(--ink); }
+  .card.bubble:hover .avatar-bg, .card.bubble:focus-visible .avatar-bg { stroke: var(--accent); stroke-width: 2.5; }
+  .card.me .halo { fill: var(--accent-soft); }
+  .more { fill: var(--muted); font-size: 13px; }
+  #list { position: absolute; inset: 0; overflow: auto; padding: 72px 20px 40px; background: var(--bg); }
+  #list > * { max-width: 640px; margin-inline: auto; }
+  .search { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 12px;
+            border: 1px solid var(--field-border); background: var(--field); color: var(--muted); margin-bottom: 8px; }
+  .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: 15px; color: var(--ink); }
+  .search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lgroup h2 { display: flex; justify-content: space-between; margin: 18px 4px 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .lgroup h2 span { font-weight: 400; color: var(--muted); }
+  .lrows { background: var(--panel); border: 1px solid var(--card-border); border-radius: 14px; overflow: hidden; }
+  .lrow { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px; border: 0;
+          border-radius: 0; background: transparent; text-align: left; white-space: normal; font-weight: 400; }
+  .lrow + .lrow { border-top: 1px solid var(--divider); }
+  .lrow.sel { background: var(--accent-soft); }
+  .lrow .av { width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
+              font-size: 17px; background: var(--male); color: var(--male-ink); overflow: hidden; }
+  .lrow .av.F { background: var(--female); color: var(--female-ink); }
+  .lrow .av img { width: 100%; height: 100%; object-fit: cover; }
+  .lrow .mid { flex: 1; min-width: 0; display: grid; gap: 1px; }
+  .lrow .t { font-size: 16px; font-weight: 700; color: var(--accent); overflow-wrap: anywhere; }
+  .lrow .n { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow .back { flex: none; max-width: 40%; display: grid; justify-items: end; gap: 1px; text-align: right; }
+  .lrow .back small { font-size: 11px; color: var(--muted); }
+  .lrow .back b { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+  .list-empty { text-align: center; color: var(--muted); font-size: 14px; margin-top: 32px; }
+
   /* ---------- side panel / bottom sheet */
   aside { flex: none; width: 380px; background: var(--panel); border-left: 1px solid var(--card-border);
           display: flex; flex-direction: column; min-height: 0; }
@@ -219,7 +257,10 @@
     #zoomIn { order: -1; }
     .zoom output { display: none; }
     #canvas { padding-bottom: 200px; }
-    #svg { margin: 8px auto 0; }
+    #svg { margin: 60px auto 0; }
+    .views { top: 10px; left: 12px; transform: none; }
+    .views label { padding: 0 10px; }
+    #list { padding: 64px 12px 200px; }
 
     aside { position: fixed; left: 0; right: 0; bottom: 0; width: auto; z-index: 20;
             border: 0; border-radius: 20px 20px 0 0; box-shadow: var(--shadow-lg);
@@ -262,6 +303,7 @@
   <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1Z"/></symbol>
   <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/></symbol>
 </svg>
 
@@ -282,6 +324,16 @@
 <main>
   <section class="stage" aria-label="Family tree">
     <div id="canvas"><svg id="svg"></svg></div>
+    <div id="list" hidden>
+      <label class="search"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+        <input type="search" id="listSearch" placeholder="Search by name or relation" aria-label="Search family" autocomplete="off"></label>
+      <div id="listBody"></div>
+    </div>
+    <div class="seg views" id="viewSel" role="radiogroup" aria-label="View">
+      <label><input type="radio" name="view" value="around">Around me</label>
+      <label><input type="radio" name="view" value="list">List</label>
+      <label><input type="radio" name="view" value="tree">Tree</label>
+    </div>
     <div class="viewpoint" id="viewpoint" hidden><span id="viewpointText"></span></div>
     <div class="zoom" id="zoomBar">
       <button type="button" id="zoomOut" aria-label="Zoom out"><svg class="i"><use href="#i-minus"/></svg></button>

@@ -6,7 +6,11 @@ import { api } from "./api.js";
 import { setupPwa } from "./pwa.js";
 
 const CARD_W = 168, CARD_H = 104, GAP_X = 28, GAP_Y = 72, PAD = 40;
-let state = { tree: null, selected: null, lang: "ta", kin: {}, linked: false, trees: [], me: null, zoom: 1, dims: null };
+const VIEWS = ["around", "list", "tree"];
+let savedView = null;
+try { savedView = localStorage.getItem("uravu-view"); } catch {}
+let state = { tree: null, selected: null, lang: "ta", kin: {}, kinFor: null, linked: false, trees: [], me: null, zoom: 1, dims: null,
+              view: VIEWS.includes(savedView) ? savedView : "around" };
 const isPhone = () => matchMedia("(max-width: 760px)").matches;
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const canEdit = treeId => (state.tree?.editable_tree_ids || []).includes(treeId);
@@ -28,6 +32,9 @@ async function init() {
   $("#langSel").onchange = e => { state.lang = e.target.value; select(state.selected); };
   $("#canvas").onclick = e => { if (e.target.id === "svg" || e.target.id === "canvas") setSheet(false); };
   $("#linkedToggle").onchange = e => { state.linked = e.target.checked; loadTree(state.tree.id); };
+  $(`#viewSel input[value="${state.view}"]`).checked = true;
+  $("#viewSel").onchange = e => setView(e.target.value);
+  $("#listSearch").oninput = () => drawList();
 }
 
 async function refreshTrees() {
@@ -43,7 +50,7 @@ function showNoTrees() {
   $("#svg").innerHTML = `<text class="empty" x="30" y="50">You don't have a family tree yet.</text>
     <text class="empty" x="30" y="76">Click “+ New tree”, or open an invite link from your family.</text>`;
   $("#addSection").hidden = true; $("#membersBtn").hidden = true;
-  $("#treeSel").hidden = true; $("#zoomBar").hidden = true; $("#sheetActions").hidden = true;
+  $("#treeSel").hidden = true; $("#zoomBar").hidden = true; $("#sheetActions").hidden = true; $("#viewSel").hidden = true;
 }
 
 async function loadTree(id) {
@@ -55,9 +62,10 @@ async function loadTree(id) {
   const editor = state.tree.role !== "viewer";
   $("#addSection").hidden = !editor;
   $("#viewerNote").hidden = editor;
-  state.kin = {};
+  state.kin = {}; state.kinFor = null;
+  showView();
   draw();
-  if (fresh) fitZoom(isPhone() ? 0.75 : 0.7);
+  if (fresh) fitZoom(isPhone() ? 0.5 : 0.45);
   if (state.selected && byId(state.selected)) select(state.selected);
   else if (state.selected) { state.selected = null; clearDetails(); }
 }
@@ -115,7 +123,9 @@ function setZoom(z) {
 function fitZoom(floor = 0.35) {
   if (!state.dims) return;
   const c = $("#canvas");
-  state.zoom = Math.max(floor, Math.min(1, (c.clientWidth - 16) / state.dims.W));
+  const visibleH = isPhone() ? c.clientHeight - 200 : c.clientHeight - 128;
+  const fit = Math.min((c.clientWidth - 16) / state.dims.W, visibleH / state.dims.H);
+  state.zoom = Math.max(floor, Math.min(1, fit));
   applyZoom();
 }
 function focusSelected() {
@@ -203,6 +213,12 @@ function layout(people, rels) {
 const byIdIn = (people, id) => people.find(p => p.id === +id);
 
 function draw() {
+  if (state.view === "list") return drawList();
+  if (state.view === "around") return drawAround();
+  drawTree();
+}
+
+function drawTree() {
   const { people, relationships } = state.tree;
   const svg = $("#svg");
   const L = layout(people, relationships);
@@ -239,9 +255,9 @@ function draw() {
       const main = trim(a.term || a.description, 17);
       const native = a.term_native && a.term_native !== a.term && main.length + a.term_native.length <= 22
         ? ` <tspan class="native">${esc(a.term_native)}</tspan>` : "";
-      termText = `<text class="term" x="14" y="76">${esc(main)}${native}</text>`;
+      termText = `<text class="term" x="14" y="76" data-w="${CARD_W - 26}">${esc(main)}${native}</text>`;
       const backLabel = state.lang === "ta" ? "அவர் அழைப்பது" : "calls back";
-      if (b) termText += `<text class="back" x="14" y="93">${backLabel}: ${esc(trim(b.term || b.description, state.lang === "ta" ? 12 : 18))}</text>`;
+      if (b) termText += `<text class="back" x="14" y="93" data-w="${CARD_W - 26}">${backLabel}: ${esc(trim(b.term || b.description, state.lang === "ta" ? 12 : 18))}</text>`;
     }
     const year = p.birth_date ? p.birth_date.slice(0, 4) : "";
     const avatar = p.photo_url
@@ -256,8 +272,8 @@ function draw() {
       ${sel ? `<rect class="ring" x="-3" y="-3" width="${CARD_W + 6}" height="${CARD_H + 6}" rx="16"/>` : ""}
       <rect class="box" width="${CARD_W}" height="${CARD_H}" rx="14"/>
       <circle class="avatar-bg" cx="28" cy="28" r="18"/>${avatar}
-      <text class="name" x="54" y="25">${esc(trim(p.full_name, 13))}</text>
-      <text class="year" x="54" y="42">${esc(trim(sub, 15))}</text>
+      <text class="name" x="54" y="25" data-w="${CARD_W - 54 - (p.linked_to?.length ? 30 : 12)}">${esc(p.full_name)}</text>
+      <text class="year" x="54" y="42" data-w="${CARD_W - 66}">${esc(sub)}</text>
       <line class="rule" x1="12" x2="${CARD_W - 12}" y1="56" y2="56"/>
       ${linkedBadge}${termText}</g>`;
   });
@@ -268,6 +284,7 @@ function draw() {
   }
   svg.innerHTML = `<defs><clipPath id="avClip" clipPathUnits="userSpaceOnUse">
     <circle cx="28" cy="28" r="18"/></clipPath></defs>` + out;
+  fitCardText(svg);
   svg.querySelectorAll(".card").forEach(g => {
     g.onclick = e => { e.stopPropagation(); select(+g.dataset.id); };
     g.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(+g.dataset.id); } };
@@ -277,21 +294,48 @@ function draw() {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const trim = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
 
+// Web fonts change text widths once they arrive, so measure again then.
+document.fonts?.ready.then(() => { if (state.tree?.people?.length) draw(); });
+
+// Letter counts don't predict width (Tamil, wide capitals), so measure each
+// card line after drawing and shorten it until it fits inside the box.
+function fitCardText(svg) {
+  for (const t of svg.querySelectorAll("text[data-w]")) {
+    const max = +t.dataset.w;
+    if (t.getComputedTextLength() <= max) continue;
+    const extra = t.querySelector("tspan");
+    if (extra) { extra.remove(); if (t.getComputedTextLength() <= max) continue; }
+    const full = t.textContent.trimEnd();
+    let lo = 0, hi = full.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      t.textContent = full.slice(0, mid).trimEnd() + "…";
+      if (t.getComputedTextLength() <= max) lo = mid; else hi = mid - 1;
+    }
+    t.textContent = full.slice(0, lo).trimEnd() + "…";
+  }
+}
+
 async function select(id) {
   if (!id) return;
   state.selected = id;
   const p = byId(id);
   const first = p.full_name.split(" ")[0];
   $("#selTitle").textContent = p.full_name;
-  $("#selHint").textContent = `Cards show what ${first} calls each relative.` +
-    (isPhone() ? "" : " Hover a card for the full relationship.");
+  $("#selHint").textContent = state.view === "tree"
+    ? `Cards show what ${first} calls each relative.` + (isPhone() ? "" : " Hover a card for the full relationship.")
+    : `Everyone is shown as ${first} would call them. Tap someone to see the family from their side.`;
   $("#viewpointText").innerHTML = `Seeing everyone as <b>${esc(first)}</b> would call them`;
   $("#viewpoint").hidden = false;
   $("#addTitle").textContent = `Add a relative of ${first}`;
   $("#sheetDetails").hidden = false; $("#sheetActions").hidden = false;
   showDetails(p);
-  state.kin = await api(`/api/trees/${state.tree.id}/kinship/${id}?lang=${state.lang}${state.linked ? "&linked=1" : ""}`);
+  const kin = await api(`/api/trees/${state.tree.id}/kinship/${id}?lang=${state.lang}${state.linked ? "&linked=1" : ""}`);
+  if (state.selected !== id) return;   // another person was picked meanwhile
+  const recentre = state.view === "around" && state.kinFor !== id;
+  state.kin = kin; state.kinFor = id;
   draw();
+  if (recentre) { fitZoom(0.8); centreCanvas(); }
   const g = $(`#svg .card[data-id="${id}"]`);
   if (g) g.focus({ preventScroll: true });
 }
@@ -577,3 +621,177 @@ init().catch(err => {
 });
 
 setupPwa(document.getElementById("installBtn"));
+
+// ---------- views: around-me circles, grouped list, full tree
+function setView(v) {
+  state.view = v;
+  try { localStorage.setItem("uravu-view", v); } catch {}
+  showView();
+  if (!state.tree) return;
+  draw();
+  if (v === "tree") fitZoom(isPhone() ? 0.5 : 0.45);
+  if (v === "around") { fitZoom(0.8); centreCanvas(); }
+  if (state.selected) select(state.selected);
+}
+function showView() {
+  const list = state.view === "list";
+  $("#list").hidden = !list;
+  $("#canvas").hidden = list;
+  $("#zoomBar").hidden = list || !state.tree?.people.length;
+  $("#viewSel").hidden = !state.tree?.people.length;
+}
+function centreCanvas() {
+  // put the person in the middle of what's visible (above the phone's bottom sheet)
+  const me = $("#svg .card.me");
+  if (!me) return;
+  const c = $("#canvas"), r = me.getBoundingClientRect(), cr = c.getBoundingClientRect();
+  const visibleH = isPhone() ? c.clientHeight - 180 : c.clientHeight;
+  c.scrollLeft += r.left - cr.left - (c.clientWidth - r.width) / 2;
+  c.scrollTop += r.top - cr.top - (visibleH - r.height) / 2;
+}
+
+/** Who sits in the middle when nobody is picked: you, if you're in the tree; else the best-connected person. */
+function defaultEgo() {
+  const people = state.tree.people;
+  const mine = people.find(p => p.full_name.trim().toLowerCase() === (state.me?.name || "").trim().toLowerCase());
+  if (mine) return mine.id;
+  const deg = {};
+  for (const r of state.tree.relationships) { deg[r.person_id] = (deg[r.person_id] || 0) + 1; deg[r.related_id] = (deg[r.related_id] || 0) + 1; }
+  return people.slice().sort((a, b) => (deg[b.id] || 0) - (deg[a.id] || 0))[0].id;
+}
+
+/** Steps in a kinship code ("F.eB.S" = 3); 0 when not connected. */
+const steps = k => k?.a_calls_b?.code ? k.a_calls_b.code.split(".").length : 0;
+const firstStep = k => (k?.a_calls_b?.code || "").split(".")[0].replace(/^[ey]/, "");
+const termOf = k => k?.a_calls_b ? (k.a_calls_b.term || k.a_calls_b.description) : "";
+const backOf = k => k?.b_calls_a ? (k.b_calls_a.term || k.b_calls_a.description) : "";
+// Where each side of the family sits, in degrees clockwise from the top:
+// father's side upper left, mother's upper right, siblings left, spouse right, children below.
+const SIDE = { F: -50, M: 50, B: -110, Z: -110, H: 110, W: 110, S: 180, D: 180 };
+
+/** Needs the kinship answers for the selected person; asks for them if missing. */
+function egoReady() {
+  const people = state.tree.people;
+  if (!people.length) return false;
+  if (!state.selected || !byId(state.selected)) { select(defaultEgo()); return false; }
+  return state.kinFor === state.selected;
+}
+
+function drawAround() {
+  const svg = $("#svg");
+  if (!state.tree.people.length) return drawTree();   // shows the empty-tree message
+  if (!egoReady()) { svg.innerHTML = ""; return; }
+  const RINGS = 3, NODE = 112;   // NODE = room each bubble needs along its circle
+  const ego = byId(state.selected);
+  const rings = Array.from({ length: RINGS }, () => []);
+  let further = 0;
+  for (const p of state.tree.people) {
+    if (p.id === ego.id) continue;
+    const k = state.kin[p.id], n = steps(k);
+    if (n >= 1 && n <= RINGS) rings[n - 1].push(p); else further++;
+  }
+  // radius grows with how many people share a circle, so bubbles never overlap
+  const radii = [];
+  rings.forEach((ps, i) => {
+    const need = ps.length * NODE / (2 * Math.PI);
+    radii.push(Math.max(i ? radii[i - 1] + 118 : 128, need));
+  });
+  const used = rings.map((ps, i) => ps.length ? radii[i] : 0);
+  const R = Math.max(...used, 0) + 74;
+  const W = R * 2, H = R * 2 + (further ? 40 : 0), cx = R, cy = R;
+  state.dims = { W, H };
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  applyZoom();
+
+  const avatar = (p, r) => p.photo_url
+    ? `<image href="${esc(p.photo_url)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" preserveAspectRatio="xMidYMid slice" clip-path="url(#bub${r})"/>`
+    : `<text class="initial" x="0" y="${Math.round(r * 0.3)}" text-anchor="middle">${esc(p.full_name[0] || "?")}</text>`;
+  let out = `<defs><clipPath id="bub22" clipPathUnits="userSpaceOnUse"><circle r="22"/></clipPath>
+    <clipPath id="bub34" clipPathUnits="userSpaceOnUse"><circle r="34"/></clipPath></defs>`;
+  rings.forEach((ps, i) => { if (ps.length) out += `<circle class="orbit" cx="${cx}" cy="${cy}" r="${radii[i]}"/>`; });
+
+  rings.forEach((ps, i) => {
+    if (!ps.length) return;
+    const pref = p => SIDE[firstStep(state.kin[p.id])] ?? 0;
+    ps.sort((a, b) => pref(a) - pref(b) || state.kin[a.id].a_calls_b.code.localeCompare(state.kin[b.id].a_calls_b.code)
+      || (a.birth_date || "9").localeCompare(b.birth_date || "9"));
+    // spread evenly, then turn the whole circle so people land near their side
+    const step = 360 / ps.length;
+    let sx = 0, sy = 0;
+    ps.forEach((p, j) => { const d = (pref(p) - j * step) * Math.PI / 180; sx += Math.cos(d); sy += Math.sin(d); });
+    const turn = ps.length === 1 ? pref(ps[0]) : Math.atan2(sy, sx) * 180 / Math.PI;
+    ps.forEach((p, j) => {
+      const a = (turn + j * step) * Math.PI / 180;
+      const x = cx + radii[i] * Math.sin(a), y = cy - radii[i] * Math.cos(a);
+      const k = state.kin[p.id];
+      const label = `${p.full_name}, ${termOf(k)}. They call ${ego.full_name.split(" ")[0]}: ${backOf(k)}`;
+      out += `<g class="card bubble ${p.gender}${p.from_other_tree ? " other" : ""}" data-id="${p.id}" transform="translate(${x.toFixed(1)},${(y - 14).toFixed(1)})" tabindex="0" role="button" aria-label="${esc(label)}">
+        <title>${esc(label)}</title>
+        <circle class="avatar-bg" r="22"/>${avatar(p, 22)}
+        <text class="term" y="42" text-anchor="middle" data-w="${NODE - 8}">${esc(termOf(k))}</text>
+        <text class="name" y="58" text-anchor="middle" data-w="${NODE - 8}">${esc(p.full_name)}</text></g>`;
+    });
+  });
+
+  out += `<g class="card me ${ego.gender}" data-id="${ego.id}" transform="translate(${cx},${cy - 12})" tabindex="0" role="button" aria-label="${esc(ego.full_name)}, in the centre">
+    <circle class="halo" r="42"/><circle class="avatar-bg" r="34"/>${ego.photo_url ? avatar(ego, 34) : `<text class="initial" y="9" text-anchor="middle">${esc(ego.full_name[0] || "?")}</text>`}
+    <text class="name" y="58" text-anchor="middle" data-w="${NODE + 20}">${esc(ego.full_name)}</text></g>`;
+  if (further) out += `<text class="more" x="${cx}" y="${H - 14}" text-anchor="middle">${further} more relative${further > 1 ? "s" : ""} further away · see List</text>`;
+  if (!rings.some(r => r.length)) out += `<text class="more" x="${cx}" y="${cy + 90}" text-anchor="middle">No relatives added yet</text>`;
+
+  svg.innerHTML = out;
+  fitCardText(svg);
+  svg.querySelectorAll(".card").forEach(g => {
+    g.onclick = e => { e.stopPropagation(); if (+g.dataset.id !== state.selected) select(+g.dataset.id); else setSheet(true); };
+    g.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); g.onclick(e); } };
+  });
+}
+
+// list order inside a group: parents, spouse, siblings, children
+const RANK = { F: 0, M: 1, H: 2, W: 2, B: 3, Z: 3, S: 4, D: 4 };
+const GROUPS = [
+  ["close", "Close family"], ["F", "Father's side"], ["M", "Mother's side"], ["spouse", "Spouse's family"],
+  ["sib", "Brothers' and sisters' families"], ["kids", "Children's families"], ["none", "Not connected yet"],
+];
+function groupOf(k) {
+  const n = steps(k);
+  if (!n) return "none";
+  if (n === 1) return "close";
+  const f = firstStep(k);
+  return f === "F" || f === "M" ? f : f === "H" || f === "W" ? "spouse" : f === "S" || f === "D" ? "kids" : "sib";
+}
+
+function drawList() {
+  const body = $("#listBody");
+  if (!state.tree.people.length) { body.innerHTML = `<p class="list-empty">This tree is empty.</p>`; return; }
+  if (!egoReady()) { body.innerHTML = ""; return; }
+  const ego = byId(state.selected);
+  const q = $("#listSearch").value.trim().toLowerCase();
+  const rows = {};
+  for (const p of state.tree.people) {
+    if (p.id === ego.id) continue;
+    const k = state.kin[p.id];
+    const hay = [p.full_name, p.native_name, termOf(k), k?.a_calls_b?.description].join(" ").toLowerCase();
+    if (q && !hay.includes(q)) continue;
+    (rows[groupOf(k)] ||= []).push(p);
+  }
+  const row = p => {
+    const k = state.kin[p.id], year = p.birth_date ? p.birth_date.slice(0, 4) : "";
+    const sub = [p.full_name, year, p.from_other_tree ? p.tree_name : ""].filter(Boolean).join(" · ");
+    const av = p.photo_url ? `<img src="${esc(p.photo_url)}" alt="">` : esc(p.full_name[0] || "?");
+    return `<button type="button" class="lrow" data-id="${p.id}">
+      <span class="av ${p.gender}">${av}</span>
+      <span class="mid"><span class="t">${esc(termOf(k) || "—")}</span><span class="n">${esc(sub)}</span></span>
+      ${backOf(k) ? `<span class="back"><small>calls ${esc(ego.full_name.split(" ")[0])}</small><b>${esc(backOf(k))}</b></span>` : ""}</button>`;
+  };
+  const html = GROUPS.filter(([g]) => rows[g]?.length).map(([g, title]) => {
+    const rank = p => RANK[firstStep(state.kin[p.id])] ?? 9;
+    const ps = rows[g].sort((a, b) => steps(state.kin[a.id]) - steps(state.kin[b.id]) || rank(a) - rank(b)
+      || (state.kin[a.id]?.a_calls_b?.code || "").localeCompare(state.kin[b.id]?.a_calls_b?.code || "")
+      || (a.birth_date || "9").localeCompare(b.birth_date || "9"));
+    return `<section class="lgroup"><h2>${title} <span>${ps.length}</span></h2><div class="lrows">${ps.map(row).join("")}</div></section>`;
+  }).join("");
+  body.innerHTML = `<p class="hint" style="margin:4px 4px 0">As <b>${esc(ego.full_name)}</b> would call them. Tap someone to see it from their side.</p>`
+    + (html || `<p class="list-empty">No one matches “${esc(q)}”.</p>`);
+  body.querySelectorAll(".lrow").forEach(b => b.onclick = () => { select(+b.dataset.id); $("#list").scrollTop = 0; });
+}
