@@ -235,7 +235,8 @@ function draw() {
       const native = a.term_native && a.term_native !== a.term && main.length + a.term_native.length <= 22
         ? ` <tspan class="native">${esc(a.term_native)}</tspan>` : "";
       termText = `<text class="term" x="14" y="76">${esc(main)}${native}</text>`;
-      if (b) termText += `<text class="back" x="14" y="93">calls back: ${esc(trim(b.term || b.description, 18))}</text>`;
+      const backLabel = state.lang === "ta" ? "அவர் அழைப்பது" : "calls back";
+      if (b) termText += `<text class="back" x="14" y="93">${backLabel}: ${esc(trim(b.term || b.description, state.lang === "ta" ? 12 : 18))}</text>`;
     }
     const year = p.birth_date ? p.birth_date.slice(0, 4) : "";
     const avatar = p.photo_url

@@ -46,3 +46,10 @@ test("spot checks", () => {
   assert.equal(describe("F.eB.S"), "Father's elder brother's son");
   assert.equal(stripAge("F.eB.yZ"), "F.B.Z");
 });
+
+test("Tamil descriptions read naturally", async () => {
+  const { describeTamil } = await import("../src/kinship.js");
+  assert.equal(describeTamil("F.eB.W.F"), "அப்பாவின் அண்ணனின் மனைவியின் அப்பா");
+  assert.equal(describeTamil("M.B.S"), "அம்மாவின் சகோதரனின் மகன்");
+  assert.equal(describeTamil("yZ"), "தங்கை");
+});

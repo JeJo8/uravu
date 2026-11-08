@@ -8,7 +8,7 @@
  * "0 rows changed" and database errors into friendly messages.
  */
 import { getClient, currentUser, friendlyError } from "./neon.js";
-import { callsEveryone } from "./kinship.js";
+import { callsEveryone, describeTamil } from "./kinship.js";
 import { loadView, kinInputs, connectedTreeIds, samePersonIds } from "./view.js";
 import { LANGUAGES, TERMS } from "./terms.js";
 
@@ -193,6 +193,23 @@ async function members(treeId) {
   return out;
 }
 
+// ---------------------------------------------------------------- language
+/** Each mode speaks one language only: Tamil mode shows Tamil script (and Tamil
+ * descriptions when there's no single word); English mode shows English only. */
+function inOneLanguage(result, lang) {
+  const one = r => {
+    if (!r) return r;
+    if (lang === "ta") {
+      return { ...r, term: r.term_native || null, term_native: null, description: describeTamil(r.code) };
+    }
+    return { ...r, term_native: null };
+  };
+  for (const id of Object.keys(result)) {
+    result[id] = { a_calls_b: one(result[id].a_calls_b), b_calls_a: one(result[id].b_calls_a) };
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------- router
 const routes = [
   ["GET", /^\/api\/languages$/, () => LANGUAGES],
@@ -245,7 +262,7 @@ const routes = [
     const { view } = lastView;
     const ego = view.alias.get(+m[2]) ?? fail("Person not found");
     const [people, rels] = kinInputs(view);
-    return callsEveryone(people, rels, TERMS, ego, lang);
+    return inOneLanguage(callsEveryone(people, rels, TERMS, ego, lang), lang);
   }],
 
   ["POST", /^\/api\/people$/, (m, body) => addPerson(body)],

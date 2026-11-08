@@ -101,6 +101,22 @@ export function describe(code) {
   return text[0].toUpperCase() + text.slice(1);
 }
 
+// Tamil words for each step: [on its own, "of" form used before the next step]
+const TA_WORDS = {
+  F: ["அப்பா", "அப்பாவின்"], M: ["அம்மா", "அம்மாவின்"],
+  eB: ["அண்ணன்", "அண்ணனின்"], yB: ["தம்பி", "தம்பியின்"], B: ["சகோதரன்", "சகோதரனின்"],
+  eZ: ["அக்கா", "அக்காவின்"], yZ: ["தங்கை", "தங்கையின்"], Z: ["சகோதரி", "சகோதரியின்"],
+  S: ["மகன்", "மகனின்"], D: ["மகள்", "மகளின்"],
+  H: ["கணவர்", "கணவரின்"], W: ["மனைவி", "மனைவியின்"],
+};
+
+/** "F.eB.S" -> "அப்பாவின் அண்ணனின் மகன்" (Tamil fallback when there's no single word). */
+export function describeTamil(code) {
+  if (!code) return "நீங்கள்";
+  const parts = code.split(".");
+  return parts.map((t, i) => TA_WORDS[t][i === parts.length - 1 ? 0 : 1]).join(" ");
+}
+
 /** Most specific matching term wins. */
 export function lookupTerm(terms, lang, code, speakerGender, targetAge) {
   let best = null, bestScore = -1;
