@@ -1,5 +1,7 @@
+node_modules/
+dist/
+dist-test/
+.env
+.env.local
 __pycache__/
 *.db
-.env
-.venv/
-.pytest_cache/

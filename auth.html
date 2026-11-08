@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uravu</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;600&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #f6f3ee; --panel: #fffdf9; --ink: #2b2620; --muted: #7a7166;
+          --accent: #b4532a; --border: #e2d9cd; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1a17; --panel: #262320; --ink: #f1ebe3; --muted: #a59b8f;
+            --accent: #e08356; --border: #3d3832; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+         font-family: Inter, "Noto Sans Tamil", system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  .box { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--border);
+         border-radius: 16px; padding: 28px 24px; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  h1 span { color: var(--accent); font-family: "Noto Sans Tamil"; margin-left: 6px; }
+  p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 20px; }
+  form { display: grid; gap: 10px; }
+  label { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+  input { font: inherit; font-size: 15px; padding: 10px 12px; border-radius: 8px;
+          border: 1px solid var(--border); background: var(--panel); color: var(--ink); width: 100%; }
+  button { font: inherit; font-size: 15px; padding: 11px; border-radius: 8px; border: none;
+           background: var(--accent); color: #fff; cursor: pointer; margin-top: 6px; }
+  button:disabled { opacity: .6; }
+  .err { color: #c0392b; font-size: 13px; min-height: 18px; }
+  .alt { font-size: 14px; color: var(--muted); margin-top: 16px; text-align: center; }
+  a { color: var(--accent); }
+  .tree { font-size: 18px; font-weight: 700; color: var(--ink); }
+  a.google { display: block; text-align: center; text-decoration: none; font-weight: 600;
+             font-size: 15px; padding: 11px; border-radius: 8px; border: 1px solid var(--border);
+             color: var(--ink); background: var(--panel); }
+  a.google:hover { border-color: var(--accent); }
+  .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 16px 0; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .notice { color: #c0392b; font-size: 14px; margin: 0 0 14px; }
+  .ok { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  a.google[aria-disabled=true] { opacity: .6; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Uravu <span>உறவு</span></h1>
+  <div id="view"><p>Loading…</p></div>
+</div>
+<script type="module" src="/src/auth-page.js"></script>
+</body>
+</html>

@@ -1,40 +1,35 @@
-# Uravu (உறவு) — family tree with kinship terms
+# Uravu (உறவு): family tree with kinship terms
 
 A family tree that shows **what each person calls every relative** in their own
 language, and what the relative calls them back. Tamil and English to start.
 
-Click Arun → his father's younger brother shows **Chithappa (சித்தப்பா)**,
+Click Karthik → his father's elder brother shows **Periyappa (பெரியப்பா)**,
 calls back **Magan**. Switch to English → "Uncle" / "Nephew".
 
-## How it works
+## How it's built
 
-1. **Path finding** (`kinship.py`): BFS through parent/spouse links finds the
-   shortest route between two people and encodes it, e.g. `F.yB` = father's
-   younger brother, `M.B.D` = mother's brother's daughter. Birth dates decide
-   elder (`e`) / younger (`y`).
-2. **Term lookup**: the code, the speaker's gender and the relative's age are
-   matched against the `kinship_terms` table. No match → a plain description.
-3. **Reverse term**: the same lookup run from the other person.
+```
+Browser (static site on Render, never sleeps)
+   │  Neon Auth: Google / email sign-in
+   │  Neon Data API: reads & writes tables
+   ▼
+Neon Postgres: Row Level Security decides what each user may see or change
+```
 
-Each person can also have a **phone** (tap to call), **address** (opens Google Maps)
-and a **photo** (resized to 400px in the browser, stored in Postgres because
-Render's disk is wiped on every deploy).
+There is no server of our own. The rules that used to live in Python now live
+in the database (`db/setup.sql`), so they can't be bypassed from the browser.
 
-### Linking family trees
-Each family keeps its own tree. When one person belongs to two families
-(e.g. Priya is in her husband's tree and her parents' tree), link the two cards
-as **the same person**: select her → *Same person in another tree…*.
+| File | What it does |
+|---|---|
+| `src/kinship.js` | Finds how two people are related (`F.eB` = father's elder brother) and looks up the term |
+| `src/terms.js` | Tamil + English terms. Add a language = add rows |
+| `src/view.js` | Merges "same person" cards when linked families are shown |
+| `src/api.js` | Answers the page's `/api/...` calls using the Data API |
+| `src/app.js`, `index.html` | The tree page |
+| `src/auth-page.js`, `auth.html` | Log in, sign up, join-a-tree |
+| `db/setup.sql` | Tables, security rules, and the functions the app calls |
 
-Tick **Include linked families** to see both trees together. Linked cards merge
-into one, so terms work across families: Priya's son → her brother = **Maama**.
-Code: `family_view.py` merges linked cards before the kinship engine runs.
-
-### Accounts and sharing
-Everyone signs in with **Google** (one tap) or with name, email and password
-(stored hashed). If someone signs in with Google using the email of an existing
-account, the two are joined and the old password is removed, because email
-sign-ups are never verified and Google's are. You only see
-trees you're a member of. Roles per tree:
+### Security rules (Row Level Security)
 
 | Role | Can |
 |---|---|
@@ -42,74 +37,43 @@ trees you're a member of. Roles per tree:
 | editor | add / edit / delete people, link trees |
 | viewer | look only |
 
-Owners create **invite links** (👥 Members → Create invite link) for editors or
-viewers. Links last 7 days and can be revoked. Linking two trees needs editor
-access on both, and lets members of either tree see the other in the
-"Include linked families" view.
+Members of a tree can also see families **linked** to it. Linking needs editor
+access on both trees. Invite links are random, last 7 days and can be revoked.
+Trees with no owner go to the Google-verified email set at the end of `db/setup.sql`.
 
-Trees with no owner (made before logins, or by the seed commands) are given to
-the account with `OWNER_EMAIL`, or to the first account if that isn't set.
+## Setup
 
-Add a language = add rows to `terms_seed.py` (no code changes).
-Tamil terms vary by region and family — review and adjust.
+### 1. Neon
+1. **Auth** → *Enable Neon Auth*. Copy the **Auth URL**.
+2. **Data API** → tick *Use Neon Auth*, leave *Grant public schema access* **unticked**
+   (the setup script grants exactly what's needed) → *Enable*. Copy the **API URL**.
+3. **SQL Editor** → paste all of `db/setup.sql`, change the email on the last line
+   to yours → *Run*. Safe to run again; it keeps existing trees, people, links and photos.
+4. **Data API** → *Refresh schema cache*.
+5. **Auth → Settings**:
+   - *Domains*: add your site, e.g. `https://uravu.onrender.com` (and `http://localhost:5173` for development).
+   - *OAuth / Google*: use your own Client ID and secret (Neon's shared ones show "Neon" on the Google screen).
 
-## Run locally
+### 2. Google Cloud (for your own Google sign-in screen)
+Clients → your Web client → *Authorised redirect URIs*: add
+`<your Neon Auth URL>/callback/google`.
 
+### 3. Render
+New → Blueprint → this repo. Set `VITE_NEON_AUTH_URL` and `VITE_NEON_DATA_API_URL`.
+
+### Run locally
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-flask --app app init-db       # tables + kinship terms (uses SQLite locally)
-flask --app app seed-demo     # sample 3-generation family
-flask --app app seed-linked-demo  # second family, linked through Priya
-flask --app app run           # http://127.0.0.1:5000
-pytest -q                     # 50 tests
+npm install
+cp .env.example .env.local   # paste your two Neon URLs
+npm run dev                  # http://localhost:5173
+npm test                     # kinship engine: same answers as the old Python version
 ```
 
-## Deploy: Neon + Render
-
-1. **Neon**: create a project → copy the connection string
-   (`postgresql://...neon.tech/neondb?sslmode=require`).
-2. **GitHub**: push this folder to a new repo.
-3. **Render**: New → Blueprint → pick the repo (uses `render.yaml`).
-   Paste the Neon string as `DATABASE_URL` when asked.
-4. **Accounts:** Render generates `SECRET_KEY`. Set `OWNER_EMAIL` to your email,
-   then sign up with that email so the existing trees become yours.
-5. **Google sign-in** (optional, free):
-   1. console.cloud.google.com → new project → *Google Auth Platform*.
-   2. Branding: app name, support email. Audience: **External**, then **Publish**.
-   3. Clients → Create → *Web application*. Authorised redirect URIs:
-      `https://<your-app>.onrender.com/auth/google/callback` and
-      `http://127.0.0.1:5000/auth/google/callback`.
-   4. Put the Client ID and Secret in Render as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-6. The build runs `init-db`, which also adds new columns to existing tables.
-7. Demo data (Render's free plan has no Shell, so run it on your machine):
-   `export DATABASE_URL='<neon string>' && flask --app app seed-demo && flask --app app seed-linked-demo`
-
-## API
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/trees/<id>` | people + relationships |
-| GET | `/api/trees/<id>/kinship/<person_id>?lang=ta` | what that person calls everyone |
-| GET | `/api/kinship?a=1&b=5&lang=en` | one pair, both directions |
-| POST | `/api/people` | add person (+ `relative_id`, `relation`: father/mother/son/daughter/husband/wife/brother/sister) |
-| PUT / DELETE | `/api/people/<id>` | edit (incl. `phone`, `address`, `photo` data URL, `remove_photo`) / remove |
-| GET | `/api/people/<id>/photo` | the stored photo |
-| POST | `/api/relationships` | raw link: `type` parent or spouse |
-| GET | `/api/trees/<id>?linked=1` | tree plus every linked family, linked cards merged |
-| POST | `/api/trees` | new tree: `name` |
-| POST / DELETE | `/api/links`, `/api/links/<id>` | link two cards as the same person (`person_a`, `person_b`) / unlink |
-| POST | `/api/auth/signup`, `/login`, `/logout`, `/password` | accounts |
-| GET / PUT / DELETE | `/api/trees/<id>/members[/<user_id>]` | list, change role, remove / leave |
-| POST / DELETE | `/api/trees/<id>/invites[/<id>]` | create / revoke invite link |
-| POST | `/api/invites/<token>/accept` | join a tree |
-| PUT / DELETE | `/api/trees/<id>` | rename / delete tree (owner) |
-
-All API calls need a login; writes must be JSON (blocks cross-site form posts).
+`npm run test:db` checks every security rule against a local Postgres
+(set `PGURL`, e.g. `postgresql://postgres@localhost:5432/postgres`).
+`tests-db/neon_emulation.sql` imitates the roles and functions Neon provides.
 
 ## Next ideas
-- Link requests with approval (other family's owner says yes)
-- Password reset by email
-- Suggest duplicates: same name + birth year in two trees
+- Link requests with approval (the other family's owner says yes)
 - Hindi, Telugu, Malayalam terms
-- Drag to pan on mobile
+- Suggest duplicates: same name + birth year in two trees

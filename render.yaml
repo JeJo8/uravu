@@ -1,21 +1,33 @@
+# Render Static Site: plain files, so it never sleeps.
+# The browser talks straight to Neon (Auth + Data API); security rules live in db/setup.sql.
 services:
   - type: web
     name: uravu
-    runtime: python
-    plan: free
-    buildCommand: pip install -r requirements.txt && flask --app app init-db
-    startCommand: gunicorn app:app
-    healthCheckPath: /healthz
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
     envVars:
-      - key: DATABASE_URL
-        sync: false   # paste your Neon connection string in the Render dashboard
-      - key: PYTHON_VERSION
-        value: 3.12.7
-      - key: SECRET_KEY
-        generateValue: true   # signs the login cookie; Render makes a random one
-      - key: OWNER_EMAIL
-        sync: false   # your email: trees made before logins are given to this account
-      - key: GOOGLE_CLIENT_ID
-        sync: false   # from Google Cloud Console > Credentials (leave empty to hide the Google button)
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
+      - key: VITE_NEON_AUTH_URL
+        sync: false   # Neon Console > Auth: https://ep-....neonauth....neon.tech/neondb/auth
+      - key: VITE_NEON_DATA_API_URL
+        sync: false   # Neon Console > Data API: https://ep-....apirest....neon.tech/neondb/rest/v1
+    routes:
+      - type: rewrite
+        source: /login
+        destination: /auth.html
+      - type: rewrite
+        source: /signup
+        destination: /auth.html
+      - type: rewrite
+        source: /join/*
+        destination: /auth.html
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin   # keeps invite links out of other sites' logs
